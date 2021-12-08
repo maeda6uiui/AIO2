@@ -110,7 +110,7 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--src_data_filepath",type=str,default="../Data/aio_02_train.jsonl")
     parser.add_argument("--wikipedia_root_dirname",type=str,default="../Data/Wikipedia")
-    parser.add_argument("--create_negative_prob",type=float,default=0.2)
+    parser.add_argument("--create_negative_prob",type=float,default=0.5)
     parser.add_argument("--samples_save_dirpath",type=str,default="../Data")
     parser.add_argument("--samples_save_filename",type=str,default="train_samples.jsonl")
     args=parser.parse_args()

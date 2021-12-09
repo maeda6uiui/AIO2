@@ -1,5 +1,4 @@
 import argparse
-import hashlib
 import json
 import logging
 import random
@@ -12,14 +11,11 @@ logging.basicConfig(format=logging_fmt)
 logger=logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
 
-def get_md5_hash(text:str)->str:
-    return hashlib.md5(text.encode()).hexdigest()
-
 def main(args):
     logger.info(args)
 
     src_data_filepath:str=args.src_data_filepath
-    wikipedia_root_dirname:str=args.wikipedia_root_dirname
+    wikipedia_titles_filepath:str=args.wikipedia_titles_filepath
     create_negative_prob:float=args.create_negative_prob
     samples_save_dirpath:str=args.samples_save_dirpath
     samples_save_filename:str=args.samples_save_filename
@@ -45,55 +41,40 @@ def main(args):
 
     logger.info("入力データ数: {}".format(len(src_data_list)))
 
-    logger.info("Wikipedia記事データを読み込む準備をしています...")
+    logger.info("Wikipedia記事のタイトルを読み込んでいます...")
 
-    wikipedia_root_dir=Path(wikipedia_root_dirname)
-    wikipedia_dirs=wikipedia_root_dir.glob("*")
-    wikipedia_dirs=list(wikipedia_dirs)
+    wikipedia_titles_file=Path(wikipedia_titles_filepath)
+    with wikipedia_titles_file.open("r") as r:
+        titles=r.read().splitlines()
+        titles.pop()    #最終行は空文字列
 
-    logger.info("Wikipedia記事数: {}".format(len(wikipedia_dirs)))
+    logger.info("Wikipedia記事数: {}".format(len(titles)))
 
     logger.info("サンプルを作成しています...")
 
-    samples:List[Dict[str,str,str,bool]]=[]
+    samples:List[Dict[str,str,bool]]=[]
 
     for src_data in tqdm(src_data_list):
         question=src_data["question"]
         answers=src_data["answers"]
 
         for answer in answers:
-            title_hash=get_md5_hash(answer)
-            wikipedia_dir=wikipedia_root_dir.joinpath(title_hash)
-            if not wikipedia_dir.exists():
-                #logger.warn("存在しないWikipedia記事名です: {}".format(answer))
-                continue
+            sample={
+                "question":question,
+                "given_article":answer,
+                "is_corresponding_article":True
+            }
+            samples.append(sample)
 
-            wikipedia_text_file=wikipedia_dir.joinpath("text.txt")
-            with wikipedia_text_file.open("r") as r:
-                wikipedia_text=r.read()
+            if random.random()<create_negative_prob:
+                rnd_wikipedia_title=random.choice(titles)
 
                 sample={
                     "question":question,
-                    "answer":answer,
-                    "wikipedia_text":wikipedia_text,
-                    "is_corresponding_text":True
+                    "given_article":rnd_wikipedia_title,
+                    "is_corresponding_article":False
                 }
                 samples.append(sample)
-
-            if random.random()<create_negative_prob:
-                rnd_wikipedia_dir=random.choice(wikipedia_dirs)
-                rnd_wikipedia_text_file=rnd_wikipedia_dir.joinpath("text.txt")
-
-                with rnd_wikipedia_text_file.open("r") as r:
-                    rnd_wikipedia_text=r.read()
-
-                    sample={
-                        "question":question,
-                        "answer":answer,
-                        "wikipedia_text":rnd_wikipedia_text,
-                        "is_corresponding_text":False
-                    }
-                    samples.append(sample)
 
     logger.info("作成されたサンプルをファイルに書き込んでいます...")
 
@@ -109,7 +90,7 @@ def main(args):
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--src_data_filepath",type=str,default="../Data/aio_02_train.jsonl")
-    parser.add_argument("--wikipedia_root_dirname",type=str,default="../Data/Wikipedia")
+    parser.add_argument("--wikipedia_titles_filepath",type=str,default="../Data/wikipedia_titles.txt")
     parser.add_argument("--create_negative_prob",type=float,default=0.5)
     parser.add_argument("--samples_save_dirpath",type=str,default="../Data")
     parser.add_argument("--samples_save_filename",type=str,default="train_samples.jsonl")

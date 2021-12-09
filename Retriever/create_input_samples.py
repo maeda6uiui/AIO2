@@ -59,6 +59,9 @@ def main(args):
         answers=src_data["answers"]
 
         for answer in answers:
+            if answer not in titles:
+                continue
+
             sample={
                 "question":question,
                 "given_article":answer,

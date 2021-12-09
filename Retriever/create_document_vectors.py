@@ -54,6 +54,8 @@ def main(args):
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
     document_vectors_save_dirname:str=args.document_vectors_save_dirname
     bert_model_name:str=args.bert_model_name
+    start_index:int=args.start_index
+    end_index:int=args.end_index
 
     logger.info("Wikipediaデータを読み込む準備をしています...")
 
@@ -62,6 +64,13 @@ def main(args):
     wikipedia_data_dirs=list(wikipedia_data_dirs)
 
     logger.info("Wikipediaデータの数: {}".format(len(wikipedia_data_dirs)))
+
+    if end_index is None:
+        end_index=len(wikipedia_data_dirs)
+
+    logger.info("{}から{}のデータに対して文書ベクトルの作成を行います".format(start_index,end_index))
+
+    wikipedia_data_dirs=wikipedia_data_dirs[start_index:end_index]
 
     logger.info("文書ベクトルの作成を行っています...")
 
@@ -94,6 +103,8 @@ if __name__=="__main__":
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--document_vectors_save_dirname",type=str,default="../Data/WikipediaVector")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
+    parser.add_argument("--start_index",type=int,default=0)
+    parser.add_argument("--end_index",type=int)
     args=parser.parse_args()
 
     main(args)

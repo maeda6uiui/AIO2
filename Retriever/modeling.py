@@ -241,8 +241,8 @@ def eval(
                 all_questions[i],
                 all_given_articles[i],
                 all_corresponding_flags[i],
-                all_logits[i],
-                all_logits[i]>0.5))
+                all_logits[i].item(),
+                all_logits[i].item()>0.5))
 
     ret={
         "accuracy":accuracy,

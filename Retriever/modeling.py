@@ -143,7 +143,7 @@ def load_document_vectors(
             document_vector=torch.squeeze(document_vector)
             document_vectors[idx]=document_vector
 
-    return document_vectors
+    return document_vectors.to(device)
 
 def train(
     score_calculator:RelevanceScoreCalculator,
@@ -172,7 +172,6 @@ def train(
 
         #Documentの特徴量ベクトルを取得する
         document_vectors=load_document_vectors(wikipedia_data_root_dir,dim_feature_vector,given_articles)
-        document_vectors=document_vectors.to(device)
 
         #モデルの学習を行う
         score_calculator.zero_grad()
@@ -227,7 +226,6 @@ def eval(
 
         #Documentの特徴量ベクトルを取得する
         document_vectors=load_document_vectors(wikipedia_data_root_dir,dim_feature_vector,given_articles)
-        document_vectors=document_vectors.to(device)
 
         #QuestionとDocumentの関連度を取得する
         with torch.no_grad():

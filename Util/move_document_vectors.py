@@ -10,7 +10,7 @@ def main(args):
     wikipedia_data_root_dir=Path(wikipedia_data_root_dirname)
 
     vector_files=vectors_dir.glob("*.pt")
-    vector_files=len(vector_files)
+    vector_files=list(vector_files)
 
     for vector_file in tqdm(vector_files):
         title_hash=vector_file.stem

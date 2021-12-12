@@ -69,22 +69,78 @@ def create_dataset(samples_filepath:str)->QAndDDataset:
 def get_md5_hash(text:str)->str:
     return hashlib.md5(text.encode()).hexdigest()
 
+def get_question_vectors(
+    questions:List[str],
+    bert:BertModel,
+    tokenizer:AutoTokenizer,
+    max_length:int,
+    dim_feature_vector:int,
+    process_one_by_one:bool=False)->torch.FloatTensor:
+    question_vectors=None
+
+    if process_one_by_one:
+        num_questions=len(questions)
+        question_vectors=torch.empty(num_questions,dim_feature_vector,device=device)
+
+        for idx,question in enumerate(questions):
+            q_inputs=tokenizer.encode_plus(
+                question,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt")
+
+            bert_inputs={
+                "input_ids":q_inputs["input_ids"].to(device),
+                "attention_mask":q_inputs["attention_mask"].to(device),
+                "token_type_ids":q_inputs["token_type_ids"].to(device),
+                "return_dict":True
+            }
+
+            with torch.no_grad():
+                bert_outputs=bert(**bert_inputs)
+                question_vector=bert_outputs["pooler_output"] #(1, hidden_size)
+                question_vector=torch.squeeze(question_vector)  #(hidden_size)
+                question_vectors[idx]=question_vector
+
+    else:
+        q_inputs=tokenizer.encode_plus(
+                questions,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt")
+            
+        bert_inputs={
+            "input_ids":q_inputs["input_ids"].to(device),
+            "attention_mask":q_inputs["attention_mask"].to(device),
+            "token_type_ids":q_inputs["token_type_ids"].to(device),
+            "return_dict":True
+        }
+
+        with torch.no_grad():
+            bert_outputs=bert(**bert_inputs)
+            question_vectors=bert_outputs["pooler_output"] #(N, hidden_size)
+
+    return question_vectors
+
 def load_document_vectors(
-    document_vectors_dir:Path,
-    dim_document_vector:int,
+    wikipedia_data_root_dir:Path,
+    dim_feature_vector:int,
     given_articles:List[str])->torch.FloatTensor:
     train_batch_size=len(given_articles)
 
-    document_vectors=torch.empty(train_batch_size,dim_document_vector)
+    document_vectors=torch.empty(train_batch_size,dim_feature_vector)
 
     for idx,given_article in enumerate(given_articles):
         article_hash=get_md5_hash(given_article)
-        document_vector_file=document_vectors_dir.joinpath("{}.pt".format(article_hash))
+        document_vector_file=wikipedia_data_root_dir.joinpath("{}.pt".format(article_hash),"vector.pt")
         
         if not document_vector_file.exists():
-            document_vectors[idx]=torch.zeros(dim_document_vector)
+            document_vectors[idx]=torch.zeros(dim_feature_vector)
         else:
             document_vector=torch.load(document_vector_file,map_location=torch.device("cpu"))
+            document_vector=torch.squeeze(document_vector)
             document_vectors[idx]=document_vector
 
     return document_vectors
@@ -94,7 +150,7 @@ def train(
     bert:BertModel,
     train_dataloader:DataLoader,
     tokenizer:AutoTokenizer,
-    document_vectors_dir:Path,
+    wikipedia_data_root_dir:Path,
     max_length:int,
     dim_feature_vector:int,
     optimizer:optim.Optimizer,
@@ -112,33 +168,19 @@ def train(
         corresponding_flags=batch["corresponding_flag"]
 
         #Questionの特徴量ベクトルを取得する
-        q_inputs=tokenizer.encode_plus(
-            questions,
-            padding="max_length",
-            max_length=max_length,
-            truncation=True,
-            return_tensors="pt")
-        
-        bert_inputs={
-            "input_ids":q_inputs["input_ids"].to(device),
-            "attention_mask":q_inputs["attention_mask"].to(device),
-            "token_type_ids":q_inputs["token_type_ids"].to(device),
-            "return_dict":True
-        }
-
-        with torch.no_grad():
-            bert_outputs=bert(**bert_inputs)
-            question_vectors=bert_outputs["pooler_output"] #(N, hidden_size)
+        question_vectors=get_question_vectors(questions,bert,tokenizer,max_length,dim_feature_vector,process_one_by_one=True)
 
         #Documentの特徴量ベクトルを取得する
-        document_vectors=load_document_vectors(document_vectors_dir,dim_feature_vector,given_articles)
+        document_vectors=load_document_vectors(wikipedia_data_root_dir,dim_feature_vector,given_articles)
         document_vectors=document_vectors.to(device)
 
         #モデルの学習を行う
         score_calculator.zero_grad()
 
         logits=score_calculator(question_vectors,document_vectors)
-        t_corresponding_flags=torch.as_tensor(corresponding_flags,dtype=torch.long,device=device)
+        logits=torch.squeeze(logits)
+
+        t_corresponding_flags=torch.as_tensor(corresponding_flags,dtype=torch.float,device=device)
 
         loss=criterion(logits,t_corresponding_flags)
         loss.backward()
@@ -151,14 +193,14 @@ def train(
         if step%logging_steps==0:
             logger.info("Step: {}\tLoss: {}".format(step,loss.item()))
 
-        return total_loss/step_count
+    return total_loss/step_count
 
 def eval(
     score_calculator:RelevanceScoreCalculator,
     bert:BertModel,
     eval_dataloader:DataLoader,
     tokenizer:AutoTokenizer,
-    document_vectors_dir:Path,
+    wikipedia_data_root_dir:Path,
     max_length:int,
     dim_feature_vector:int,
     results_save_file:Path,
@@ -181,33 +223,17 @@ def eval(
         corresponding_flags=batch["corresponding_flag"]
 
         #Questionの特徴量ベクトルを取得する
-        q_inputs=tokenizer.encode_plus(
-            questions,
-            padding="max_length",
-            max_length=max_length,
-            truncation=True,
-            return_tensors="pt")
-        
-        bert_inputs={
-            "input_ids":q_inputs["input_ids"].to(device),
-            "attention_mask":q_inputs["attention_mask"].to(device),
-            "token_type_ids":q_inputs["token_type_ids"].to(device),
-            "return_dict":True
-        }
-
-        with torch.no_grad():
-            bert_outputs=bert(**bert_inputs)
-            question_vectors=bert_outputs["pooler_output"] #(N, hidden_size)
+        question_vectors=get_question_vectors(questions,bert,tokenizer,max_length,dim_feature_vector,process_one_by_one=True)
 
         #Documentの特徴量ベクトルを取得する
-        document_vectors=load_document_vectors(document_vectors_dir,dim_feature_vector,given_articles)
+        document_vectors=load_document_vectors(wikipedia_data_root_dir,dim_feature_vector,given_articles)
         document_vectors=document_vectors.to(device)
 
         #QuestionとDocumentの関連度を取得する
         with torch.no_grad():
             logits=score_calculator(question_vectors,document_vectors)
             
-        t_corresponding_flags=torch.as_tensor(corresponding_flags,dtype=torch.long,device=device)
+        t_corresponding_flags=torch.as_tensor(corresponding_flags,dtype=torch.float,device=device)
         loss=criterion(logits,t_corresponding_flags)
 
         step_count+=1
@@ -256,7 +282,7 @@ def main(args):
 
     train_samples_filepath:str=args.train_samples_filepath
     eval_samples_filepath:str=args.eval_samples_filepath
-    document_vectors_dirname:str=args.document_vectors_dirname
+    wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
     results_save_dirname:str=args.results_save_dirname
     bert_model_name:str=args.bert_model_name
     train_batch_size:int=args.train_batch_size
@@ -266,7 +292,7 @@ def main(args):
     learning_rate:float=args.learning_rate
     logging_steps:int=args.logging_steps
 
-    document_vectors_dir=Path(document_vectors_dirname)
+    wikipedia_data_root_dir=Path(wikipedia_data_root_dirname)
 
     results_save_dir=Path(results_save_dirname)
     results_save_dir.mkdir(parents=True,exist_ok=True)
@@ -313,7 +339,7 @@ def main(args):
             bert,
             train_dataloader,
             tokenizer,
-            document_vectors_dir,
+            wikipedia_data_root_dir,
             config.max_length,
             config.hidden_size,
             optimizer,
@@ -332,7 +358,7 @@ def main(args):
             bert,
             eval_dataloader,
             tokenizer,
-            document_vectors_dir,
+            wikipedia_data_root_dir,
             config.max_length,
             config.hidden_size,
             eval_results_save_file,
@@ -347,7 +373,8 @@ def main(args):
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--train_samples_filepath",type=str,default="../Data/train_samples.jsonl")
-    parser.add_argument("--document_vectors_dirname",type=str,default="../Data/WikipediaVector")
+    parser.add_argument("--eval_samples_filepath",type=str,default="../Data/dev_samples.jsonl")
+    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--results_save_dirname",type=str,default="../Data/Retriever")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
     parser.add_argument("--train_batch_size",type=int,default=128)

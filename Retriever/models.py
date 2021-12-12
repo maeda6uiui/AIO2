@@ -17,6 +17,6 @@ class RelevanceScoreCalculator(nn.Module):
         #vec_d: (N, dim_feature_vector)
 
         x=torch.cat([vec_q,vec_d],dim=1)    #(N, dim_feature_vector*2)
-        x=self.main(x)
+        x=self.main(x)  #(N, 1)
 
         return x

@@ -161,7 +161,8 @@ def eval(
     document_vectors_dir:Path,
     max_length:int,
     dim_feature_vector:int,
-    results_save_file:Path)->Dict[float,float]:
+    results_save_file:Path,
+    preds_save_file:Path)->Dict[float,float]:
     score_calculator.eval()
 
     criterion=nn.BCELoss()
@@ -225,15 +226,15 @@ def eval(
     accuracy=(preds==t_all_corresponding_flags).mean().item()
     accuracy*=100
 
-    logger.info("Accuracy: {}".format(accuracy))
+    mean_loss=total_loss/step_count
 
     num_questions=len(all_questions)
     
     #結果をファイルに出力する
     with results_save_file.open("w") as w:
-        w.write("Accuracy: {}\n".format(accuracy))
-        w.write("\n")
+        w.write("正解率: {} %\t平均損失: {}\n".format(accuracy,mean_loss))
 
+    with preds_save_file.open("w") as w:
         w.write("問題\t与えられた記事名\t関連している記事かどうか\tスコア\t予測結果\n")
 
         for i in range(num_questions):
@@ -246,7 +247,7 @@ def eval(
 
     ret={
         "accuracy":accuracy,
-        "mean_loss":total_loss/step_count
+        "mean_loss":mean_loss
     }
     return ret
 
@@ -324,6 +325,7 @@ def main(args):
         torch.save(score_calculator.state_dict(),checkpoint_save_file)
 
         eval_results_save_file=results_save_dir.joinpath("results_{}.txt".format(epoch))
+        eval_preds_save_file=results_save_dir.joinpath("preds_{}.txt".format(epoch))
 
         eval_results=eval(
             score_calculator,
@@ -333,11 +335,12 @@ def main(args):
             document_vectors_dir,
             config.max_length,
             config.hidden_size,
-            eval_results_save_file)
+            eval_results_save_file,
+            eval_preds_save_file)
         eval_accuracy=eval_results["accuracy"]
         eval_mean_loss=eval_results["mean_loss"]
 
-        logger.info("評価時の平均損失: {}\t正解率: {}".format(eval_mean_loss,eval_accuracy))
+        logger.info("正解率: {} %\t評価時の平均損失: {}".format(eval_accuracy,eval_mean_loss))
 
     logger.info("モデルの学習が完了しました")
 

@@ -232,6 +232,7 @@ def eval(
         #QuestionとDocumentの関連度を取得する
         with torch.no_grad():
             logits=score_calculator(question_vectors,document_vectors)
+            logits=torch.squeeze(logits)
             
         t_corresponding_flags=torch.as_tensor(corresponding_flags,dtype=torch.float,device=device)
         loss=criterion(logits,t_corresponding_flags)

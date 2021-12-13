@@ -240,14 +240,14 @@ def eval(
         all_questions+=questions
         all_given_articles+=given_articles
         all_corresponding_flags+=corresponding_flags
-        torch.cat([all_logits,logits.cpu()],dim=0)
+        all_logits=torch.cat([all_logits,logits.cpu()],dim=0)
 
     #正解率を計算する
     preds=(all_logits>0.5).long()   #(Number of questions, 1)
     preds=torch.squeeze(preds)  #(Number of questions)
     t_all_corresponding_flags=torch.as_tensor(all_corresponding_flags,dtype=torch.long)
 
-    accuracy=(preds==t_all_corresponding_flags).mean().item()
+    accuracy=(preds==t_all_corresponding_flags).float().mean().item()
     accuracy*=100
 
     mean_loss=total_loss/step_count

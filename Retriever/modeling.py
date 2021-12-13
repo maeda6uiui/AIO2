@@ -313,7 +313,7 @@ def main(args):
 
     if resume_epoch is not None:
         checkpoint_file=results_save_dir.joinpath("checkpoint_{}.pt".format(resume_epoch-1))
-        logger.info("{}よりチェックポイントを読み込みます",str(checkpoint_file))
+        logger.info("{}よりチェックポイントを読み込みます".format(str(checkpoint_file)))
 
         state_dict=torch.load(checkpoint_file,map_location=torch.device("cpu"))
         score_calculator.load_state_dict(state_dict)

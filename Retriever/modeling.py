@@ -134,7 +134,7 @@ def load_document_vectors(
 
     for idx,given_article in enumerate(given_articles):
         article_hash=get_md5_hash(given_article)
-        document_vector_file=wikipedia_data_root_dir.joinpath("{}.pt".format(article_hash),"vector.pt")
+        document_vector_file=wikipedia_data_root_dir.joinpath(article_hash,"vector.pt")
         
         if not document_vector_file.exists():
             document_vectors[idx]=torch.zeros(dim_feature_vector)

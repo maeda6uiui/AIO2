@@ -94,13 +94,13 @@ def retrieve(
     batch_size:int,
     k:int):
     question_vector=get_question_vector(question,bert,tokenizer,max_length) #(1, hidden_size)
-    question_vectors=question_vector.expand(batch_size,-1)  #(N, hidden_size)
 
     num_wikipedia_articles=document_vectors.size(0)
     all_scores=torch.empty(0,1,device=device)
 
     for i in range(0,num_wikipedia_articles,batch_size):
         this_document_vectors=document_vectors[i:i+batch_size]
+        question_vectors=question_vector.expand(this_document_vectors.size(0),-1)
 
         with torch.no_grad():
             scores=score_calculator(question_vectors,this_document_vectors) #(N, 1)

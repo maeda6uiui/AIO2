@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+from re import I
 import torch
 from pathlib import Path
 from transformers import AutoTokenizer,BertConfig,BertModel
@@ -19,9 +20,10 @@ logger.setLevel(level=logging.INFO)
 
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def load_questions(samples_filepath:str)->Tuple[List[str],List[str]]:
+def load_questions(samples_filepath:str)->Tuple[List[str],List[str],List[List[str]]]:
     qids:List[str]=[]
     questions:List[str]=[]
+    answers:List[str]=[]
 
     with open(samples_filepath,"r") as r:
         for line in r:
@@ -31,11 +33,13 @@ def load_questions(samples_filepath:str)->Tuple[List[str],List[str]]:
             data=json.loads(line)
             qid=data["qid"]
             question=data["question"]
+            this_answers=data["answers"]
 
             qids.append(qid)
             questions.append(question)
+            answers.append(this_answers)
 
-    return qids,questions
+    return qids,questions,answers
 
 def get_question_vector(
     question:str,
@@ -68,48 +72,57 @@ def load_document_vector(wikipedia_data_dir:Path)->torch.FloatTensor:
 
     return document_vector.to(device)
 
+def load_document_vectors(wikipedia_data_dirs:List[Path],dim_document_vector:int)->torch.FloatTensor:
+    num_wikipedia_articles=len(wikipedia_data_dirs)
+    document_vectors=torch.empty(num_wikipedia_articles,dim_document_vector)
+
+    for idx,wikipedia_data_dir in enumerate(tqdm(wikipedia_data_dirs)):
+        document_vector_file=wikipedia_data_dir.joinpath("vector.pt")
+        document_vector=torch.load(document_vector_file,map_location=torch.device("cpu"))
+        document_vectors[idx]=torch.squeeze(document_vector)
+
+    return document_vectors.to(device)
+
 def retrieve(
     question:str,
+    document_vectors:torch.FloatTensor,
     wikipedia_data_dirs:List[Path],
     score_calculator:RelevanceScoreCalculator,
     bert:BertModel,
     tokenizer:AutoTokenizer,
     max_length:int,
+    batch_size:int,
     k:int):
-    question_vector=get_question_vector(question,bert,tokenizer,max_length)
+    question_vector=get_question_vector(question,bert,tokenizer,max_length) #(1, hidden_size)
+    question_vectors=question_vector.expand(batch_size,-1)  #(N, hidden_size)
 
-    num_wikipedia_articles=len(wikipedia_data_dirs)
-    scores=torch.empty(num_wikipedia_articles,device=device)
+    num_wikipedia_articles=document_vectors.size(0)
+    all_scores=torch.empty(0,1,device=device)
 
-    for idx,wikipedia_data_dir in enumerate(wikipedia_data_dirs):
-        document_vector=load_document_vector(wikipedia_data_dir)
+    for i in range(0,num_wikipedia_articles,batch_size):
+        this_document_vectors=document_vectors[i:i+batch_size]
 
         with torch.no_grad():
-            score=score_calculator(question_vector,document_vector)
-            score=torch.squeeze(score)
+            scores=score_calculator(question_vectors,this_document_vectors) #(N, 1)
+            all_scores=torch.cat([all_scores,scores],dim=0)
 
-            scores[idx]=score
-
-    top_k_scores,top_k_indices=torch.topk(scores,k=k)
+    all_scores=torch.squeeze(all_scores)
+    top_k_scores,top_k_indices=torch.topk(all_scores,k=k)
 
     top_k_titles:List[str]=[]
-    top_k_title_hashes:List[str]=[]
 
     for i in range(k):
         wikipedia_data_dir:Path=wikipedia_data_dirs[top_k_indices[i].item()]
-        title_hash=wikipedia_data_dir.name
 
         title_file=wikipedia_data_dir.joinpath("title.txt")
         with title_file.open("r") as r:
-            title=r.read().splitlines[0]
+            title=r.read().splitlines()[0]
 
         top_k_titles.append(title)
-        top_k_title_hashes.append(title_hash)
 
     ret={
-        "top_k_scores":top_k_scores.cpu(),
         "top_k_titles":top_k_titles,
-        "top_k_title_hashes":top_k_title_hashes
+        "top_k_scores":top_k_scores.cpu()
     }
     return ret
 
@@ -118,9 +131,11 @@ def main(args):
 
     samples_filepath:str=args.samples_filepath
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
+    limit_num_wikipedia_data:int=args.limit_num_wikipedia_data
     results_save_filepath:str=args.results_save_filepath
     bert_model_name:str=args.bert_model_name
     score_calculator_filepath:str=args.score_calculator_filepath
+    batch_size:int=args.batch_size
     k:int=args.k
 
     logger.info("関連度スコア計算の準備を行っています...")
@@ -129,7 +144,10 @@ def main(args):
     wikipedia_data_dirs=wikipedia_data_root_dir.glob("*")
     wikipedia_data_dirs=list(wikipedia_data_dirs)
 
-    qids,questions=load_questions(samples_filepath)
+    if limit_num_wikipedia_data is not None:
+        wikipedia_data_dirs=wikipedia_data_dirs[:limit_num_wikipedia_data]
+
+    qids,questions,answers=load_questions(samples_filepath)
 
     config=BertConfig.from_pretrained(bert_model_name)
     score_calculator=RelevanceScoreCalculator(config.hidden_size)
@@ -144,27 +162,33 @@ def main(args):
     bert.eval()
     bert.to(device)
 
+    logger.info("Wikipedia記事の特徴量ベクトルを読み込んでいます...")
+
+    document_vectors=load_document_vectors(wikipedia_data_dirs,config.hidden_size)
+
     logger.info("関連度スコアの計算を行っています...")
 
     with open(results_save_filepath,"w") as w:
-        for qid,question in tqdm(zip(qids,questions)):
+        for qid,question,this_answers in tqdm(zip(qids,questions,answers),total=len(qids)):
             retrieval_results=retrieve(
                 question,
+                document_vectors,
                 wikipedia_data_dirs,
                 score_calculator,
                 bert,
                 tokenizer,
                 config.max_length,
+                batch_size,
                 k)
             
             top_k_titles=retrieval_results["top_k_titles"]
-            top_k_title_hashes=retrieval_results["top_k_title_hashes"]
             top_k_scores=retrieval_results["top_k_scores"].tolist()
 
             output={
                 "qid":qid,
+                "question":question,
+                "answers":this_answers,
                 "top_k_titles":top_k_titles,
-                "top_k_title_hashes":top_k_title_hashes,
                 "top_k_scores":top_k_scores
             }
 
@@ -177,10 +201,12 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--samples_filepath",type=str,default="../Data/aio_02_train.jsonl")
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
+    parser.add_argument("--limit_num_wikipedia_data",type=int)
     parser.add_argument("--results_save_filepath",type=str,default="../Data/Retriever/train_top_ks.jsonl")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
     parser.add_argument("--score_calculator_filepath",type=str,default="../Data/Retriever/score_calculator.pt")
-    parser.add_argument("--k",type=int,default=10)
+    parser.add_argument("--batch_size",type=int,default=512)
+    parser.add_argument("--k",type=int,default=100)
     args=parser.parse_args()
 
     main(args)

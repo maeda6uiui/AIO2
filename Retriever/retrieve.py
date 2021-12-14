@@ -1,7 +1,6 @@
 import argparse
 import json
 import logging
-from re import I
 import torch
 from pathlib import Path
 from transformers import AutoTokenizer,BertConfig,BertModel
@@ -20,24 +19,34 @@ logger.setLevel(level=logging.INFO)
 
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def load_questions(samples_filepath:str)->Tuple[List[str],List[str],List[List[str]]]:
+def load_questions(
+    samples_filepath:str,
+    start_index:int,
+    end_index:int)->Tuple[List[str],List[str],List[List[str]]]:
     qids:List[str]=[]
     questions:List[str]=[]
     answers:List[str]=[]
 
     with open(samples_filepath,"r") as r:
-        for line in r:
-            if line=="":
-                continue
+        lines=r.read().splitlines()
 
-            data=json.loads(line)
-            qid=data["qid"]
-            question=data["question"]
-            this_answers=data["answers"]
+    if end_index is None:
+        end_index=len(lines)
 
-            qids.append(qid)
-            questions.append(question)
-            answers.append(this_answers)
+    lines=lines[start_index:end_index]
+
+    for line in lines:
+        if line=="":
+            continue
+
+        data=json.loads(line)
+        qid=data["qid"]
+        question=data["question"]
+        this_answers=data["answers"]
+
+        qids.append(qid)
+        questions.append(question)
+        answers.append(this_answers)
 
     return qids,questions,answers
 
@@ -130,6 +139,8 @@ def main(args):
     logger.info(args)
 
     samples_filepath:str=args.samples_filepath
+    start_index:int=args.start_index
+    end_index:int=args.end_index
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
     limit_num_wikipedia_data:int=args.limit_num_wikipedia_data
     results_save_filepath:str=args.results_save_filepath
@@ -147,7 +158,7 @@ def main(args):
     if limit_num_wikipedia_data is not None:
         wikipedia_data_dirs=wikipedia_data_dirs[:limit_num_wikipedia_data]
 
-    qids,questions,answers=load_questions(samples_filepath)
+    qids,questions,answers=load_questions(samples_filepath,start_index,end_index)
 
     config=BertConfig.from_pretrained(bert_model_name)
     score_calculator=RelevanceScoreCalculator(config.hidden_size)
@@ -200,6 +211,8 @@ def main(args):
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--samples_filepath",type=str,default="../Data/aio_02_train.jsonl")
+    parser.add_argument("--start_index",type=int,default=0)
+    parser.add_argument("--end_index",type=int)
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--limit_num_wikipedia_data",type=int)
     parser.add_argument("--results_save_filepath",type=str,default="../Data/Retriever/train_top_ks.jsonl")

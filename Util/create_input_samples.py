@@ -16,7 +16,7 @@ def main(args):
 
     src_data_filepath:str=args.src_data_filepath
     wikipedia_titles_filepath:str=args.wikipedia_titles_filepath
-    create_negative_prob:float=args.create_negative_prob
+    num_negative_samples:int=args.num_negative_samples
     samples_save_dirpath:str=args.samples_save_dirpath
     samples_save_filename:str=args.samples_save_filename
 
@@ -69,9 +69,11 @@ def main(args):
             }
             samples.append(sample)
 
-            if random.random()<create_negative_prob:
-                rnd_wikipedia_title=random.choice(titles)
+            rnd_wikipedia_titles=random.sample(titles,k=num_negative_samples)
+            if answer in rnd_wikipedia_titles:
+                rnd_wikipedia_titles.remove(answer)
 
+            for rnd_wikipedia_title in rnd_wikipedia_titles:
                 sample={
                     "question":question,
                     "given_article":rnd_wikipedia_title,
@@ -94,7 +96,7 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--src_data_filepath",type=str,default="../Data/aio_02_train.jsonl")
     parser.add_argument("--wikipedia_titles_filepath",type=str,default="../Data/wikipedia_titles.txt")
-    parser.add_argument("--create_negative_prob",type=float,default=0.5)
+    parser.add_argument("--num_negative_samples",type=int,default=10)
     parser.add_argument("--samples_save_dirpath",type=str,default="../Data")
     parser.add_argument("--samples_save_filename",type=str,default="train_samples.jsonl")
     args=parser.parse_args()

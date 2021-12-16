@@ -3,6 +3,7 @@ import pickle
 import re
 import subprocess
 from pathlib import Path
+from scipy import sparse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List
 
@@ -52,28 +53,32 @@ class GenkeiExtractor(object):
 
 class TFIDFCalculator(object):
     def __init__(self):
-        self.tf_idf_vectorizer=TfidfVectorizer(
-            analyzer="word",
-            use_idf=True,
-            norm="l2",
-            smooth_idf=True,
-            input="filename")
+        self.vectorizer=TfidfVectorizer(token_pattern=u'(?u)\\b\\w+\\b')
 
-    def fit_tf_idf_vectorizer(self,wikipedia_data_dirs:List[Path]):
-        text_filepaths:List[str]=[]
+    def load_vectorizer(self,vectorizer_filepath:str):
+        self.vectorizer:TfidfVectorizer=pickle.load(open(vectorizer_filepath,"rb"))
+
+    def save_vectorizer(self,vectorizer_filepath:str):
+        pickle.dump(self.vectorizer,open(vectorizer_filepath,"wb"))
+
+    def fit_transform(self,wikipedia_data_dirs:List[Path],matrix_save_file:Path=None):
+        genkei_filepaths:List[str]=[]
         for wikipedia_data_dir in wikipedia_data_dirs:
-            text_file=wikipedia_data_dir.joinpath("text.txt")
-            text_filepaths.append(str(text_file))
+            genkei_file=wikipedia_data_dir.joinpath("genkeis.txt")
+            genkei_filepaths.append(str(genkei_file))
 
-        self.tf_idf_vectorizer.fit(text_filepaths)
+        self.vectorizer.set_params(input="filename")
 
-    def load_tf_idf_vectorizer(self,vectorizer_filepath:str):
-        self.tf_idf_vectorizer:TfidfVectorizer=pickle.load(open(vectorizer_filepath,"rb"))
-        self.tf_idf_vectorizer.set_params(input="content")
+        self.vectorizer=self.vectorizer.fit(genkei_filepaths)
+        tf_idf_matrix=self.vectorizer.transform(genkei_filepaths)
 
-    def save_tf_idf_vectorizer(self,vectorizer_filepath:str):
-        pickle.dump(self.tf_idf_vectorizer,open(vectorizer_filepath,"wb"))
+        self.vectorizer.set_params(input="content")
+
+        if matrix_save_file is not None:
+            sparse.save_npz(matrix_save_file,tf_idf_matrix)
+
+        return tf_idf_matrix
 
     def transform(self,text:str):
-        tf_idf_matrix=self.tf_idf_vectorizer.transform([text])
+        tf_idf_matrix=self.vectorizer.transform([text])
         return tf_idf_matrix

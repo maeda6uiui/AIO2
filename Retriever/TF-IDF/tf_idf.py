@@ -80,7 +80,7 @@ class TFIDFCalculator(object):
     def save_vectorizer(self,vectorizer_filepath:str):
         pickle.dump(self.vectorizer,open(vectorizer_filepath,"wb"))
 
-    def fit_transform_corpus(self,wikipedia_data_dirs:List[Path],matrix_save_file:Path=None):
+    def fit_transform_corpus(self,wikipedia_data_dirs:List[Path],matrix_save_filepath:str=None):
         genkei_filepaths:List[str]=[]
         for wikipedia_data_dir in wikipedia_data_dirs:
             genkei_file=wikipedia_data_dir.joinpath("genkeis.txt")
@@ -93,8 +93,8 @@ class TFIDFCalculator(object):
 
         self.vectorizer.set_params(input="content")
 
-        if matrix_save_file is not None:
-            sparse.save_npz(matrix_save_file,tf_idf_matrix)
+        if matrix_save_filepath is not None:
+            sparse.save_npz(matrix_save_filepath,tf_idf_matrix)
 
         return tf_idf_matrix
 
@@ -112,5 +112,5 @@ class TFIDFCalculator(object):
 
     def transform_query(self,query:str):
         #半角スペースで分かち書きされたクエリを入力する
-        tf_idf_matrix=self.vectorizer.transform([query])
-        return tf_idf_matrix
+        tf_idf_vector=self.vectorizer.transform([query])
+        return tf_idf_vector

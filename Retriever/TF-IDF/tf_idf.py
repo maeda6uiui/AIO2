@@ -23,15 +23,7 @@ class GenkeiExtractor(object):
         self.r2=re.compile(r"[!-~]")
         self.r3=re.compile(r"[：-＠]")
 
-    def extract_genkeis(self,text_file:Path)->List[str]:
-        this_mecab_args=self.mecab_args.copy()
-        this_mecab_args.append(str(text_file))
-
-        proc=subprocess.run(this_mecab_args,stdout=subprocess.PIPE)
-        ma_result=proc.stdout.decode("utf8")
-        lines=ma_result.splitlines()
-        lines.pop()
-
+    def __get_genkeis(self,lines:List[str])->List[str]:
         genkeis=[]
         for line in lines:
             details=line.split("\t")
@@ -48,6 +40,33 @@ class GenkeiExtractor(object):
 
             genkei=details[1].split(",")[6]
             genkeis.append(genkei)
+
+        return genkeis
+
+    def extract_genkeis(self,text_file:Path)->List[str]:
+        this_mecab_args=self.mecab_args.copy()
+        this_mecab_args.append(str(text_file))
+
+        proc=subprocess.run(this_mecab_args,stdout=subprocess.PIPE)
+        ma_result=proc.stdout.decode("utf8")
+        lines=ma_result.splitlines()
+        lines.pop()
+
+        genkeis=self.__get_genkeis(lines)
+
+        return genkeis
+
+    def extract_genkeis_from_text(self,text:str)->List[str]:
+        p1=subprocess.Popen(["echo",text],stdout=subprocess.PIPE)
+        p2=subprocess.Popen(self.mecab_args,stdin=p1.stdout,stdout=subprocess.PIPE)
+        p1.stdout.close()
+        output=p2.communicate()[0]
+
+        ma_result=output.decode("utf8")
+        lines=ma_result.splitlines()
+        lines.pop()
+
+        genkeis=self.__get_genkeis(lines)
 
         return genkeis
 

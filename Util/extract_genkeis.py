@@ -1,8 +1,11 @@
 import argparse
 import logging
-import subprocess
 from pathlib import Path
 from tqdm import tqdm
+
+import sys
+sys.path.append(".")
+from tf_idf import GenkeiExtractor
 
 logging_fmt="%(asctime)s %(levelname)s: %(message)s"
 logging.basicConfig(format=logging_fmt)
@@ -32,7 +35,7 @@ def main(args):
 
     logger.info("{}から{}のWikipedia記事に対して処理を行います".format(start_index,end_index))
 
-    mecab_args=["mecab","-b",str(buffer_size),"-d",mecab_dictionary_dirname]
+    extractor=GenkeiExtractor(mecab_dictionary_dirname,buffer_size)
 
     for idx,wikipedia_data_dir in enumerate(tqdm(wikipedia_data_dirs)):
         if idx<start_index:
@@ -41,30 +44,15 @@ def main(args):
             break
 
         text_file:Path=wikipedia_data_dir.joinpath("text.txt")
-
-        this_mecab_args=mecab_args.copy()
-        this_mecab_args.append(str(text_file))
-
-        proc=subprocess.run(this_mecab_args,stdout=subprocess.PIPE)
-        ma_result=proc.stdout.decode("utf8")
-        lines=ma_result.splitlines()
-        lines.pop()
-
-        genkeis=[]
-        for line in lines:
-            details=line.split("\t")
-            if len(details)!=2:
-                continue
-
-            genkei=details[1].split(",")[6]
-            genkeis.append(genkei)
+        
+        genkeis=extractor.extract_genkeis(text_file)
 
         genkeis_file:Path=wikipedia_data_dir.joinpath("genkeis.txt")
         with genkeis_file.open("w") as w:
             for genkei in genkeis:
                 w.write("{} ".format(genkei))
 
-    logger.info("処理が終了しました")
+    logger.info("処理が完了しました")
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()

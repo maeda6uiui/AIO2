@@ -56,7 +56,7 @@ def main(args):
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
-    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
+    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../../Data/Wikipedia")
     parser.add_argument("--mecab_dictionary_dirname",type=str,default="/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd")
     parser.add_argument("--buffer_size",type=int,default=1024*1024*10)
     parser.add_argument("--start_index",type=int,default=0)

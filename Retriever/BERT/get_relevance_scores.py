@@ -81,9 +81,6 @@ def main(args):
     logger.info("結果をファイルに出力しています...")
 
     with open(output_filepath,"w") as w:
-        w.write("入力テキスト: {}\n".format(input_text))
-        w.write("\n")
-
         for i in range(num_wikipedia_articles):
             wikipedia_data_dir:Path=wikipedia_data_dirs[sorted_indices[i].item()]
             title_file=wikipedia_data_dir.joinpath("title.txt")

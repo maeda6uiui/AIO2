@@ -48,15 +48,12 @@ def main(args):
 
     cosine_similarities=linear_kernel(corpus_matrix,q_vector).flatten()
 
-    indices=np.argsort(cosine_similarities)
+    indices=np.argsort(-cosine_similarities)
     scores=cosine_similarities[indices]
 
     logger.info("結果をファイルに出力しています...")
 
     with open(output_filepath,"w") as w:
-        w.write("入力テキスト: {}\n".format(input_text))
-        w.write("\n")
-
         for i in tqdm(range(indices.shape[0])):
             index=indices[i]
             score=scores[i]
@@ -79,7 +76,7 @@ if __name__=="__main__":
     parser.add_argument("--mecab_dictionary_dirname",type=str,default="/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd")
     parser.add_argument("--corpus_matrix_filepath",type=str,default="../../Data/Retriever/TF-IDF/corpus_matrix.npz")
     parser.add_argument("--vectorizer_filepath",type=str,default="../../Data/Retriever/TF-IDF/vectorizer.pkl")
-    parser.add_argument("--output_filepath",type=str,default="../../Data/Retriever/TF-IDF/relevance_scores.jsonl")
+    parser.add_argument("--output_filepath",type=str,default="../../Data/Retriever/TF-IDF/relevance_scores.txt")
     args=parser.parse_args()
 
     main(args)

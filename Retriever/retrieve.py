@@ -204,7 +204,7 @@ def main(args):
             scores=bert_scores*tf_idf_scores
 
             top_k_indices=np.argpartition(scores,-k)[-k:]
-            top_k_indices=top_k_indices[np.argsort(scores[top_k_indices])]
+            top_k_indices=top_k_indices[np.argsort(-scores[top_k_indices])]
 
             top_k_scores=scores[top_k_indices]
             top_k_scores=top_k_scores.tolist()

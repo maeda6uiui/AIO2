@@ -184,7 +184,7 @@ def main(args):
 
     logger.info("関連度スコアの計算を行っています...")
 
-    with open(results_save_filepath,"w") as w:
+    with open(results_save_filepath,"a") as w:
         for qid,question,this_answers in tqdm(zip(qids,questions,answers),total=len(qids)):
             bert_scores=retrieve_by_bert(
                 question,

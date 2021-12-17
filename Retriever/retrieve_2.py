@@ -135,7 +135,7 @@ def retrieve_by_tf_idf(
     q_vector=tf_idf_calculator.transform_query(q_genkeis)
     q_vector=csr_gpu(q_vector)
 
-    cosine_similarities=corpus_matrix.dot(q_vector)
+    cosine_similarities=corpus_matrix.dot(q_vector.T).flatten()
     cosine_similarities=cp.asnumpy(cosine_similarities)
 
     return cosine_similarities

@@ -140,7 +140,6 @@ def main(args):
     start_index:int=args.start_index
     end_index:int=args.end_index
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
-    limit_num_wikipedia_data:int=args.limit_num_wikipedia_data
     results_save_filepath:str=args.results_save_filepath
     bert_model_name:str=args.bert_model_name
     score_calculator_filepath:str=args.score_calculator_filepath
@@ -156,16 +155,6 @@ def main(args):
     wikipedia_data_dirs=wikipedia_data_root_dir.glob("*")
     wikipedia_data_dirs=list(wikipedia_data_dirs)
     wikipedia_data_dirs.sort()
-
-    if limit_num_wikipedia_data is not None:
-        wikipedia_data_dirs=wikipedia_data_dirs[:limit_num_wikipedia_data]
-
-    titles=[]
-    for wikipedia_data_dir in wikipedia_data_dirs:
-        title_file=wikipedia_data_dir.joinpath("title.txt")
-        with title_file.open("r") as r:
-            title=r.read().splitlines()[0]
-            titles.append(title)
 
     qids,questions,answers=load_questions(samples_filepath,start_index,end_index)
 
@@ -222,8 +211,12 @@ def main(args):
 
             top_k_titles=[]
             for i in range(k):
-                title=titles[top_k_indices[i]]
-                top_k_titles.append(title)
+                wikipedia_data_dir=wikipedia_data_dirs[top_k_indices[i]]
+
+                title_file=wikipedia_data_dir.joinpath("title.txt")
+                with title_file.open("r") as r:
+                    title=r.read().splitlines()[0]
+                    top_k_titles.append(title)
 
             output={
                 "qid":qid,
@@ -244,10 +237,9 @@ if __name__=="__main__":
     parser.add_argument("--start_index",type=int,default=0)
     parser.add_argument("--end_index",type=int)
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
-    parser.add_argument("--limit_num_wikipedia_data",type=int)
     parser.add_argument("--results_save_filepath",type=str,default="../Data/Retriever/train_top_ks.jsonl")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
-    parser.add_argument("--score_calculator_filepath",type=str,default="../Data/Retriever/score_calculator.pt")
+    parser.add_argument("--score_calculator_filepath",type=str,default="../Data/Retriever/BERT/score_calculator.pt")
     parser.add_argument("--mecab_dictionary_dirname",type=str,default="/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd")
     parser.add_argument("--corpus_matrix_filepath",type=str,default="../Data/Retriever/TF-IDF/corpus_matrix.npz")
     parser.add_argument("--vectorizer_filepath",type=str,default="../Data/Retriever/TF-IDF/vectorizer.pkl")

@@ -154,6 +154,7 @@ def main(args):
     wikipedia_data_root_dir=Path(wikipedia_data_root_dirname)
     wikipedia_data_dirs=wikipedia_data_root_dir.glob("*")
     wikipedia_data_dirs=list(wikipedia_data_dirs)
+    wikipedia_data_dirs.sort()
 
     if limit_num_wikipedia_data is not None:
         wikipedia_data_dirs=wikipedia_data_dirs[:limit_num_wikipedia_data]

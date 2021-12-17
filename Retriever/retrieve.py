@@ -41,9 +41,6 @@ def load_questions(
     lines=lines[start_index:end_index]
 
     for line in lines:
-        if line=="":
-            continue
-
         data=json.loads(line)
         qid=data["qid"]
         question=data["question"]

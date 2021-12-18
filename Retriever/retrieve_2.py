@@ -143,8 +143,8 @@ def retrieve_by_tf_idf(
 def main(args):
     logger.info(args)
 
-    #limit_num_wikipedia_dataを設定すると関連度スコアの演算にてエラーが発生する
-    #それ以前の段階が正しく動作しているか確認する場合に設定する
+    #limit_num_wikipedia_dataを設定すると関連度スコアの乗算にてエラーが発生する
+    #このオプションはそれ以前の処理が正しく動作しているか確認する場合に設定する
     #(Wikipediaの文書ベクトルをすべて読み込むのは時間がかかるため)
 
     samples_filepath:str=args.samples_filepath

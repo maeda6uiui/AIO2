@@ -1,7 +1,3 @@
-"""
-CUDAが使用できる環境でのみ実行できるコード
-あらかじめCuPyをインストールしておくこと
-"""
 import argparse
 import json
 import logging
@@ -9,11 +5,11 @@ import cupy as cp
 import numpy as np
 import torch
 from pathlib import Path
+from transformers import BertConfig
 from cupyx.scipy.sparse import csr_matrix as csr_gpu
 from scipy import sparse
-from transformers import AutoTokenizer,BertConfig,BertModel
 from tqdm import tqdm
-from typing import List,Tuple
+from typing import Dict,List,Tuple
 
 import sys
 sys.path.append("./BERT")
@@ -57,30 +53,16 @@ def load_questions(
 
     return qids,questions,answers
 
-def get_question_vector(
-    question:str,
-    bert:BertModel,
-    tokenizer:AutoTokenizer,
-    max_length:int)->torch.FloatTensor:
-    q_inputs=tokenizer.encode_plus(
-        question,
-        padding="max_length",
-        max_length=max_length,
-        truncation=True,
-        return_tensors="pt")
+def load_question_vectors(question_vector_files:List[Path])->Dict[str,torch.FloatTensor]:
+    question_vectors:Dict[str,torch.FloatTensor]={}
 
-    bert_inputs={
-        "input_ids":q_inputs["input_ids"].to(device),
-        "attention_mask":q_inputs["attention_mask"].to(device),
-        "token_type_ids":q_inputs["token_type_ids"].to(device),
-        "return_dict":True
-    }
+    for question_vector_file in tqdm(question_vector_files):
+        qid=question_vector_file.stem
+        question_vector=torch.load(question_vector_file,map_location=torch.device("cpu"))
 
-    with torch.no_grad():
-        bert_outputs=bert(**bert_inputs)
-        question_vector=bert_outputs["pooler_output"] #(1, hidden_size)
+        question_vectors[qid]=question_vector
 
-    return question_vector
+    return question_vectors
 
 def load_document_vector(wikipedia_data_dir:Path)->torch.FloatTensor:
     document_vector_file=wikipedia_data_dir.joinpath("vector.pt")
@@ -99,16 +81,11 @@ def load_document_vectors(wikipedia_data_dirs:List[Path],dim_document_vector:int
 
     return document_vectors.to(device)
 
-def retrieve_by_bert(
-    question:str,
+def retrieve_by_score_calculator(
+    question_vector:torch.FloatTensor,
     document_vectors:torch.FloatTensor,
     score_calculator:RelevanceScoreCalculator,
-    bert:BertModel,
-    tokenizer:AutoTokenizer,
-    max_length:int,
     batch_size:int)->np.ndarray:
-    question_vector=get_question_vector(question,bert,tokenizer,max_length) #(1, hidden_size)
-
     num_wikipedia_articles=document_vectors.size(0)
     all_scores=torch.empty(0,1,device=device)
 
@@ -151,6 +128,7 @@ def main(args):
     start_index:int=args.start_index
     end_index:int=args.end_index
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
+    question_vectors_dirname:str=args.question_vectors_dirname
     limit_num_wikipedia_data:int=args.limit_num_wikipedia_data
     results_save_filepath:str=args.results_save_filepath
     bert_model_name:str=args.bert_model_name
@@ -178,13 +156,8 @@ def main(args):
     state_dict=torch.load(score_calculator_filepath,map_location=torch.device("cpu"))
     score_calculator.load_state_dict(state_dict)
 
-    bert=BertModel.from_pretrained(bert_model_name)
-    tokenizer=AutoTokenizer.from_pretrained(bert_model_name)
-
     score_calculator.eval()
     score_calculator.to(device)
-    bert.eval()
-    bert.to(device)
 
     genkei_extractor=GenkeiExtractor(mecab_dictionary_dirname,1024*1024)
 
@@ -194,6 +167,15 @@ def main(args):
     tf_idf_calculator=TFIDFCalculator()
     tf_idf_calculator.load_vectorizer(vectorizer_filepath)
 
+    logger.info("問題文の特徴量ベクトルを読み込んでいます...")
+
+    question_vectors_dir=Path(question_vectors_dirname)
+    question_vector_files=question_vectors_dir.glob("*")
+    question_vector_files=list(question_vector_files)
+    question_vector_files.sort()
+
+    question_vectors=load_question_vectors(question_vector_files)
+
     logger.info("Wikipedia記事の特徴量ベクトルを読み込んでいます...")
 
     document_vectors=load_document_vectors(wikipedia_data_dirs,config.hidden_size)
@@ -202,14 +184,14 @@ def main(args):
 
     with open(results_save_filepath,"a") as w:
         for qid,question,this_answers in tqdm(zip(qids,questions,answers),total=len(qids)):
-            bert_scores=retrieve_by_bert(
-                question,
+            question_vector=question_vectors[qid].to(device)
+
+            calculator_scores=retrieve_by_score_calculator(
+                question_vector,
                 document_vectors,
                 score_calculator,
-                bert,
-                tokenizer,
-                config.max_length,
-                batch_size)
+                batch_size
+            )
 
             tf_idf_scores=retrieve_by_tf_idf(
                 question,
@@ -217,7 +199,7 @@ def main(args):
                 tf_idf_calculator,
                 corpus_matrix)
 
-            scores=bert_scores*tf_idf_scores
+            scores=calculator_scores*tf_idf_scores
 
             top_k_indices=np.argpartition(scores,-k)[-k:]
             top_k_indices=top_k_indices[np.argsort(-scores[top_k_indices])]
@@ -253,9 +235,10 @@ if __name__=="__main__":
     parser.add_argument("--start_index",type=int,default=0)
     parser.add_argument("--end_index",type=int)
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
+    parser.add_argument("--question_vectors_dirname",type=str,default="../Data/QuestionVector")
     parser.add_argument("--limit_num_wikipedia_data",type=int)
     parser.add_argument("--results_save_filepath",type=str,default="../Data/Retriever/train_top_ks.jsonl")
-    parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
+    parser.add_argument("--bert_model_name",type="cl-tohoku/bert-base-japanese-whole-word-masking")
     parser.add_argument("--score_calculator_filepath",type=str,default="../Data/Retriever/BERT/score_calculator.pt")
     parser.add_argument("--mecab_dictionary_dirname",type=str,default="/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd")
     parser.add_argument("--corpus_matrix_filepath",type=str,default="../Data/Retriever/TF-IDF/corpus_matrix.npz")

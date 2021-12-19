@@ -110,7 +110,7 @@ def retrieve_by_tf_idf(
     q_genkeis=" ".join(q_genkeis)
 
     q_vector=tf_idf_calculator.transform_query(q_genkeis)
-    q_vector=csr_gpu(q_vector)
+    q_vector=csr_gpu(q_vector,dtype=np.float32)
 
     cosine_similarities=corpus_matrix.dot(q_vector.T).flatten()
     cosine_similarities=cp.asnumpy(cosine_similarities)
@@ -162,7 +162,7 @@ def main(args):
     genkei_extractor=GenkeiExtractor(mecab_dictionary_dirname,1024*1024)
 
     corpus_matrix=sparse.load_npz(corpus_matrix_filepath)
-    corpus_matrix=csr_gpu(corpus_matrix)
+    corpus_matrix=csr_gpu(corpus_matrix,dtype=np.float32)
 
     tf_idf_calculator=TFIDFCalculator()
     tf_idf_calculator.load_vectorizer(vectorizer_filepath)
@@ -238,7 +238,7 @@ if __name__=="__main__":
     parser.add_argument("--question_vectors_dirname",type=str,default="../Data/QuestionVector")
     parser.add_argument("--limit_num_wikipedia_data",type=int)
     parser.add_argument("--results_save_filepath",type=str,default="../Data/Retriever/train_top_ks.jsonl")
-    parser.add_argument("--bert_model_name",type="cl-tohoku/bert-base-japanese-whole-word-masking")
+    parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
     parser.add_argument("--score_calculator_filepath",type=str,default="../Data/Retriever/BERT/score_calculator.pt")
     parser.add_argument("--mecab_dictionary_dirname",type=str,default="/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd")
     parser.add_argument("--corpus_matrix_filepath",type=str,default="../Data/Retriever/TF-IDF/corpus_matrix.npz")

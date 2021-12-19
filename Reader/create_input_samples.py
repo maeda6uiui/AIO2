@@ -141,7 +141,7 @@ if __name__=="__main__":
     parser.add_argument("--retrieval_results_filepath",type=str,default="../Data/Retrieval/train_top_ks.jsonl")
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
-    parser.add_argument("--output_filepath",type=str,default="../Data/Reader/train_answer_ranges.jsonl")
+    parser.add_argument("--output_filepath",type=str,default="../Data/Reader/train_samples.jsonl")
     args=parser.parse_args()
 
     main(args)

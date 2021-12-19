@@ -151,11 +151,11 @@ def retrieve_by_tf_idf(
     q_vector=torch.squeeze(q_vector)
     q_vector=q_vector.to(device)
 
-    cosine_similarities=torch.empty(0,dtype=torch.float)
+    cosine_similarities=torch.empty(0,dtype=torch.float,device=device)
 
     for corpus_tensor in corpus_tensors:
         cs_temp=torch.mv(corpus_tensor,q_vector)
-        cosine_similarities=torch.cat([cosine_similarities,cs_temp.cpu()],dim=0)
+        cosine_similarities=torch.cat([cosine_similarities,cs_temp],dim=0)
 
     return cosine_similarities
 

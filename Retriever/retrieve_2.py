@@ -243,10 +243,13 @@ def main(args):
             )
 
             scores=torch.mul(calculator_scores,tf_idf_scores)
+            scores=scores.cpu().detach().numpy()
 
-            top_k_scores,top_k_indices=torch.topk(scores,k=k)
-            top_k_scores=top_k_scores.cpu().detach().tolist()
-            top_k_indices=top_k_indices.cpu().detach().tolist()
+            top_k_indices=np.argpartition(scores,-k)[-k:]
+            top_k_indices=top_k_indices[np.argsort(-scores[top_k_indices])]
+
+            top_k_scores=scores[top_k_indices]
+            top_k_scores=top_k_scores.tolist()
 
             top_k_titles=[]
             for i in range(k):

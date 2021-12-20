@@ -108,12 +108,13 @@ def load_document_vector(wikipedia_data_dir:Path)->torch.FloatTensor:
     return document_vector.to(device)
 
 def load_document_vectors(wikipedia_data_dirs:List[Path],dim_document_vector:int)->torch.FloatTensor:
-    document_vectors=torch.empty(0,dim_document_vector)
+    num_wikipedia_articles=len(wikipedia_data_dirs)
+    document_vectors=torch.empty(num_wikipedia_articles,dim_document_vector)
 
-    for wikipedia_data_dir in tqdm(wikipedia_data_dirs):
+    for idx,wikipedia_data_dir in enumerate(tqdm(wikipedia_data_dirs)):
         document_vector_file=wikipedia_data_dir.joinpath("vector.pt")
         document_vector=torch.load(document_vector_file,map_location=torch.device("cpu"))
-        document_vectors=torch.cat([document_vectors,document_vector],dim=0)
+        document_vectors[idx]=torch.squeeze(document_vector)
 
     return document_vectors.to(device)
 

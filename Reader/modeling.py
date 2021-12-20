@@ -139,7 +139,8 @@ def create_train_model_inputs(
     questions:List[str],
     article_titles:List[str],
     start_indices:List[int],
-    end_indices:List[int]):
+    end_indices:List[int],
+    context_max_length:int):
     contexts:List[str]=[]
     for article_title in article_titles:
         title_hash=get_md5_hash(article_title)
@@ -147,6 +148,7 @@ def create_train_model_inputs(
 
         with text_file.open("r") as r:
             context=r.read()
+            context=context[:context_max_length]
             contexts.append(context)
 
     encode=tokenizer.encode_plus(
@@ -154,7 +156,7 @@ def create_train_model_inputs(
         contexts,
         padding="max_length",
         max_length=max_length,
-        truncation=True,
+        truncation="only_second",
         return_tensors="pt"
     )
 
@@ -179,7 +181,8 @@ def create_eval_model_inputs(
     max_length:int,
     wikipedia_data_root_dir:Path,
     question:str,
-    top_k_titles:List[str]):
+    top_k_titles:List[str],
+    context_max_length:int):
     contexts:List[str]=[]
     for article_title in top_k_titles:
         title_hash=get_md5_hash(article_title)
@@ -187,6 +190,7 @@ def create_eval_model_inputs(
 
         with text_file.open("r") as r:
             context=r.read()
+            context=context[:context_max_length]
             contexts.append(context)
 
     questions=[]
@@ -198,7 +202,7 @@ def create_eval_model_inputs(
         contexts,
         padding="max_length",
         max_length=max_length,
-        truncation=True,
+        truncation="only_second",
         return_tensors="pt"
     )
 
@@ -220,7 +224,8 @@ def train(
     tokenizer:AutoTokenizer,
     max_length:int,
     wikipedia_data_root_dir:Path,
-    logging_steps:int)->float:
+    logging_steps:int,
+    context_max_length:int)->float:
     model.train()
 
     step_count=0
@@ -239,7 +244,8 @@ def train(
             questions,
             article_titles,
             start_indices,
-            end_indices
+            end_indices,
+            context_max_length
         )
         inputs["return_dict"]=True
 
@@ -266,7 +272,8 @@ def eval(
     tokenizer:AutoTokenizer,
     max_length:int,
     wikipedia_data_root_dir:Path,
-    eval_batch_size:int):
+    eval_batch_size:int,
+    context_max_length:int):
     model.eval()
 
     question_count=0
@@ -293,7 +300,8 @@ def eval(
             max_length,
             wikipedia_data_root_dir,
             question,
-            top_k_titles
+            top_k_titles,
+            context_max_length
         )
 
         num_sub_batches=len(top_k_titles)//eval_batch_size
@@ -386,6 +394,7 @@ def main(args):
     train_batch_size:int=args.train_batch_size
     eval_batch_size:int=args.eval_batch_size
     logging_steps:int=args.logging_steps
+    context_max_length:int=args.context_max_length
 
     logger.info("モデルの学習を行う準備をしています...")
 
@@ -433,7 +442,8 @@ def main(args):
             tokenizer,
             config.max_length,
             wikipedia_data_root_dir,
-            logging_steps
+            logging_steps,
+            context_max_length
         )
         logger.info("学習時の平均損失: {}".format(train_mean_loss))
 
@@ -446,7 +456,8 @@ def main(args):
             tokenizer,
             config.max_length,
             wikipedia_data_root_dir,
-            eval_batch_size
+            eval_batch_size,
+            context_max_length
         )
 
         eval_accuracy=eval_results["accuracy"]
@@ -494,6 +505,7 @@ if __name__=="__main__":
     parser.add_argument("--train_batch_size",type=int,default=16)
     parser.add_argument("--eval_batch_size",type=int,default=16)
     parser.add_argument("--logging_steps",type=int,default=100)
+    parser.add_argument("--context_max_length",type=int,default=3000)
     args=parser.parse_args()
 
     main(args)

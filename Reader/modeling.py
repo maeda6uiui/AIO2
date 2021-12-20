@@ -266,19 +266,24 @@ def eval(
     tokenizer:AutoTokenizer,
     max_length:int,
     wikipedia_data_root_dir:Path,
-    eval_batch_size:int)->float:
+    eval_batch_size:int):
     model.eval()
 
     question_count=0
     correct_count=0
 
+    qids:List[str]=[]
+    questions:List[str]=[]
+    answers:List[List[str]]=[]
+    predictions:List[str]=[]
+
     #問題1問を一つのバッチとするため、評価用データローダのバッチサイズは1で固定しておく
     #コマンドライン引数で設定するバッチサイズ(eval_batch_size)は、
     #一度にいくつの記事をモデルに入力するかを指定するためのもの
-    for step,batch in enumerate(eval_dataloader):
+    for batch in eval_dataloader:
         qid=batch["qid"][0]
         question=batch["question"][0]
-        answers=batch["answers"][0]
+        this_answers=batch["answers"][0]
         top_k_titles=batch["top_k_titles"][0]
         top_k_scores=batch["top_k_scores"][0]
 
@@ -319,14 +324,17 @@ def eval(
                 start_logits=outputs["start_logits"]
                 end_logits=outputs["end_logits"]
 
+                start_logits=start_logits.cpu()
+                end_logits=end_logits.cpu()
+
                 this_start_scores,this_start_indices=torch.max(start_logits,dim=0)
                 this_end_scores,this_end_indices=torch.max(end_logits,dim=0)
 
-                start_indices=torch.cat([this_start_indices,start_indices.cpu()],dim=0)
-                end_indices=torch.cat([this_end_indices,end_indices.cpu()],dim=0)
+                start_indices=torch.cat([start_indices,this_start_indices],dim=0)
+                end_indices=torch.cat([end_indices,this_end_indices],dim=0)
                 
                 this_plausibility_scores=torch.mul(this_start_scores,this_end_scores)
-                plausibility_scores=torch.cat([plausibility_scores,this_plausibility_scores.cpu()],dim=0)
+                plausibility_scores=torch.cat([plausibility_scores,this_plausibility_scores],dim=0)
 
         for i in range(len(top_k_titles)):
             plausibility_scores[i]*=top_k_scores[i]
@@ -340,12 +348,24 @@ def eval(
         predicted_answer=tokenizer.decode(answer_ids)
         predicted_answer=predicted_answer.replace(" ","")
 
-        if predicted_answer in answers:
+        if predicted_answer in this_answers:
             correct_count+=1
 
         question_count+=1
 
-    return correct_count/question_count
+        qids.append(qid)
+        questions.append(question)
+        answers.append(this_answers)
+        predictions.append(predicted_answer)
+
+    ret={
+        "accuracy":correct_count/question_count*100,
+        "qids":qids,
+        "questions":questions,
+        "answers":answers,
+        "predictions":predictions
+    }
+    return ret
 
 def main(args):
     logger.info(args)
@@ -416,7 +436,7 @@ def main(args):
         checkpoint_file=results_save_dir.joinpath("checkpoint_{}.pt".format(epoch))
         torch.save(model.state_dict(),checkpoint_file)
 
-        eval_accuracy=eval(
+        eval_results=eval(
             model,
             eval_dataloader,
             tokenizer,
@@ -424,11 +444,33 @@ def main(args):
             wikipedia_data_root_dir,
             eval_batch_size
         )
-        logger.info("評価時の正解率(完全一致): {} %".format(eval_accuracy*100))
 
-        eval_result_file=results_save_dir.joinpath("eval_accuracy_{}.txt".format(epoch))
+        eval_accuracy=eval_results["accuracy"]
+
+        logger.info("評価時の正解率(完全一致): {} %".format(eval_accuracy))
+
+        eval_result_file=results_save_dir.joinpath("eval_result_{}.txt".format(epoch))
         with eval_result_file.open("w") as w:
-            w.write("評価時の正解率(完全一致): {} %\n".format(eval_accuracy*100))
+            w.write("評価時の正解率(完全一致): {} %\n".format(eval_accuracy))
+
+        eval_predictions_file=results_save_dir.joinpath("eval_predictions_{}.jsonl".format(epoch))
+        with eval_predictions_file.open("w") as w:
+            qids=eval_results["qids"]
+            questions=eval_results["questions"]
+            answers=eval_results["answers"]
+            predictions=eval_results["predictions"]
+
+            for qid,question,this_answers,prediction in zip(qids,questions,answers,predictions):
+                data={
+                    "qid":qid,
+                    "question":question,
+                    "answers":this_answers,
+                    "prediction":prediction
+                }
+                line=json.dumps(data,ensure_ascii=False)
+
+                w.write(line)
+                w.write("\n")
 
     logger.info("モデルの学習が完了しました")
 

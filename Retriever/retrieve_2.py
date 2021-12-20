@@ -97,7 +97,7 @@ def load_question_vectors(question_vector_files:List[Path])->Dict[str,torch.Floa
         qid=question_vector_file.stem
         question_vector=torch.load(question_vector_file,map_location=torch.device("cpu"))
 
-        question_vectors[qid]=question_vector
+        question_vectors[qid]=question_vector.to(device)
 
     return question_vectors
 
@@ -108,13 +108,12 @@ def load_document_vector(wikipedia_data_dir:Path)->torch.FloatTensor:
     return document_vector.to(device)
 
 def load_document_vectors(wikipedia_data_dirs:List[Path],dim_document_vector:int)->torch.FloatTensor:
-    num_wikipedia_articles=len(wikipedia_data_dirs)
-    document_vectors=torch.empty(num_wikipedia_articles,dim_document_vector)
+    document_vectors=torch.empty(0,dim_document_vector)
 
-    for idx,wikipedia_data_dir in enumerate(tqdm(wikipedia_data_dirs)):
+    for wikipedia_data_dir in tqdm(wikipedia_data_dirs):
         document_vector_file=wikipedia_data_dir.joinpath("vector.pt")
         document_vector=torch.load(document_vector_file,map_location=torch.device("cpu"))
-        document_vectors[idx]=torch.squeeze(document_vector)
+        document_vectors=torch.cat([document_vectors,document_vector],dim=0)
 
     return document_vectors.to(device)
 
@@ -226,7 +225,7 @@ def main(args):
 
     with open(results_save_filepath,"a") as w:
         for qid,question,this_answers in tqdm(zip(qids,questions,answers),total=len(qids)):
-            question_vector=question_vectors[qid].to(device)
+            question_vector=question_vectors[qid]
 
             calculator_scores=retrieve_by_score_calculator(
                 question_vector,

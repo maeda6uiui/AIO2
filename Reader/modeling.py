@@ -95,18 +95,23 @@ class ReaderEvalDataset(Dataset):
 def get_md5_hash(text:str)->str:
     return hashlib.md5(text.encode()).hexdigest()
 
-def create_train_dataset(samples_filepath:str)->ReaderTrainDataset:
+def create_train_dataset(samples_filepath:str,limit_num_samples:int=None)->ReaderTrainDataset:
     dataset=ReaderTrainDataset()
 
     with open(samples_filepath,"r") as r:
-        for line in r:
-            data=json.loads(line)
+        lines=r.read().splitlines()
 
-            question=data["question"]
-            article_title=data["article_title"]
-            this_answer_ranges=data["answer_ranges"]
+    if limit_num_samples is not None:
+        lines=lines[:limit_num_samples]
 
-            dataset.append(question,article_title,this_answer_ranges)
+    for line in lines:
+        data=json.loads(line)
+
+        question=data["question"]
+        article_title=data["article_title"]
+        this_answer_ranges=data["answer_ranges"]
+
+        dataset.append(question,article_title,this_answer_ranges)
 
     return dataset
 
@@ -347,6 +352,7 @@ def main(args):
 
     train_samples_filepath:str=args.train_samples_filepath
     eval_samples_filepath:str=args.eval_samples_filepath
+    limit_num_train_samples:int=args.limit_num_train_samples
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
     bert_model_name:str=args.bert_model_name
     results_save_dirname:str=args.results_save_dirname
@@ -379,7 +385,7 @@ def main(args):
 
     optimizer=optim.AdamW(model.parameters(),lr=learning_rate)
 
-    train_dataset=create_train_dataset(train_samples_filepath)
+    train_dataset=create_train_dataset(train_samples_filepath,limit_num_samples=limit_num_train_samples)
     train_dataloader=DataLoader(train_dataset,batch_size=train_batch_size,shuffle=True)
 
     logger.info("学習データの数: {}".format(len(train_dataset)))
@@ -430,6 +436,7 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples.jsonl")
     parser.add_argument("--eval_samples_filepath",type=str,default="../Data/Retriever/dev_top_k_samples.jsonl")
+    parser.add_argument("--limit_num_train_samples",type=int)
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
     parser.add_argument("--results_save_dirname",type=str,default="../Data/Reader")

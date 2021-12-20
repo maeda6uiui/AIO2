@@ -275,7 +275,8 @@ def eval(
     qids:List[str]=[]
     questions:List[str]=[]
     answers:List[List[str]]=[]
-    predictions:List[str]=[]
+    predicted_articles:List[str]=[]
+    predicted_answers:List[str]=[]
 
     #問題1問を一つのバッチとするため、評価用データローダのバッチサイズは1で固定しておく
     #コマンドライン引数で設定するバッチサイズ(eval_batch_size)は、
@@ -356,14 +357,17 @@ def eval(
         qids.append(qid)
         questions.append(question)
         answers.append(this_answers)
-        predictions.append(predicted_answer)
+        predicted_articles.append(top_k_titles[most_plausible_answer_index])
+        predicted_answers.append(predicted_answer)
 
     ret={
         "accuracy":correct_count/question_count*100,
+
         "qids":qids,
         "questions":questions,
         "answers":answers,
-        "predictions":predictions
+        "predicted_articles":predicted_articles,
+        "predicted_answers":predicted_answers
     }
     return ret
 
@@ -458,14 +462,16 @@ def main(args):
             qids=eval_results["qids"]
             questions=eval_results["questions"]
             answers=eval_results["answers"]
-            predictions=eval_results["predictions"]
+            predicted_articles=eval_results["predicted_articles"]
+            predicted_answers=eval_results["predicted_answers"]
 
-            for qid,question,this_answers,prediction in zip(qids,questions,answers,predictions):
+            for qid,question,this_answers,predicted_article,predicted_answer in zip(qids,questions,answers,predicted_articles,predicted_answers):
                 data={
                     "qid":qid,
                     "question":question,
                     "answers":this_answers,
-                    "prediction":prediction
+                    "predicted_article":predicted_article,
+                    "predicted_answer":predicted_answer
                 }
                 line=json.dumps(data,ensure_ascii=False)
 

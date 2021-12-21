@@ -7,7 +7,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
 from transformers import AutoConfig,AutoTokenizer,BertForQuestionAnswering
-from typing import List
+from typing import List,Tuple
 
 logging_fmt="%(asctime)s %(levelname)s: %(message)s"
 logging.basicConfig(format=logging_fmt)
@@ -70,14 +70,7 @@ class ReaderEvalDataset(Dataset):
         this_top_k_titles=self.top_k_titles[idx]
         this_top_k_scores=self.top_k_scores[idx]
 
-        ret={
-            "qid":qid,
-            "question":question,
-            "answers":this_answers,
-            "top_k_titles":this_top_k_titles,
-            "top_k_scores":this_top_k_scores
-        }
-        return ret
+        return qid,question,this_answers,this_top_k_titles,this_top_k_scores
 
     def append(
         self,
@@ -91,6 +84,29 @@ class ReaderEvalDataset(Dataset):
         self.answers.append(this_answers)
         self.top_k_titles.append(this_top_k_titles)
         self.top_k_scores.append(this_top_k_scores)
+
+def collate_fn_for_eval_dataset(batch):
+    qids,questions,src_answers,src_top_k_titles,src_top_k_scores=list(zip(*batch))
+
+    answers:List[str]=[]
+    top_k_titles:List[str]=[]
+    top_k_scores:List[float]=[]
+
+    for i in range(len(src_answers[0])):
+        answers.append(src_answers[0][i])
+        
+    for i in range(len(src_top_k_titles[0])):
+        top_k_titles.append(src_top_k_titles[0][i])
+        top_k_scores.append(src_top_k_scores[0][i])
+
+    ret={
+        "qid":qids[0],
+        "question":questions[0],
+        "answers":answers,
+        "top_k_titles":top_k_titles,
+        "top_k_scores":top_k_scores
+    }
+    return ret
 
 def get_md5_hash(text:str)->str:
     return hashlib.md5(text.encode()).hexdigest()
@@ -115,20 +131,25 @@ def create_train_dataset(samples_filepath:str,limit_num_samples:int=None)->Reade
 
     return dataset
 
-def create_eval_dataset(samples_filepath:str)->ReaderEvalDataset:
+def create_eval_dataset(samples_filepath:str,limit_num_samples:int=None)->ReaderEvalDataset:
     dataset=ReaderEvalDataset()
 
     with open(samples_filepath,"r") as r:
-        for line in r:
-            data=json.loads(line)
+        lines=r.read().splitlines()
 
-            qid=data["qid"]
-            question=data["question"]
-            answers=data["answers"]
-            top_k_titles=data["top_k_titles"]
-            top_k_scores=data["top_k_scores"]
+    if limit_num_samples is not None:
+        lines=lines[:limit_num_samples]
 
-            dataset.append(qid,question,answers,top_k_titles,top_k_scores)
+    for line in lines:
+        data=json.loads(line)
+
+        qid=data["qid"]
+        question=data["question"]
+        answers=data["answers"]
+        top_k_titles=data["top_k_titles"]
+        top_k_scores=data["top_k_scores"]
+
+        dataset.append(qid,question,answers,top_k_titles,top_k_scores)
 
     return dataset
 
@@ -151,21 +172,36 @@ def create_train_model_inputs(
             context=context[:context_max_length]
             contexts.append(context)
 
-    encode=tokenizer.encode_plus(
-        questions,
-        contexts,
-        padding="max_length",
-        max_length=max_length,
-        truncation="only_second",
-        return_tensors="pt"
-    )
+    batch_size=len(questions)
 
-    input_ids=encode["input_ids"].to(device)
-    attention_mask=encode["attention_mask"].to(device)
-    token_type_ids=encode["token_type_ids"].to(device)
+    input_ids=torch.empty(batch_size,max_length,dtype=torch.long)
+    attention_mask=torch.empty(batch_size,max_length,dtype=torch.long)
+    token_type_ids=torch.empty(batch_size,max_length,dtype=torch.long)
 
-    start_positions=torch.LongTensor(start_indices,device=device) if start_indices is not None else None
-    end_positions=torch.LongTensor(end_indices,device=device) if end_indices is not None else None
+    for i in range(batch_size):
+        encode=tokenizer.encode_plus(
+            questions[i],
+            contexts[i],
+            padding="max_length",
+            max_length=max_length,
+            truncation="only_second",
+            return_tensors="pt"
+        )
+
+        this_input_ids=torch.squeeze(encode["input_ids"])
+        this_attention_mask=torch.squeeze(encode["attention_mask"])
+        this_token_type_ids=torch.squeeze(encode["token_type_ids"])
+
+        input_ids[i]=this_input_ids
+        attention_mask[i]=this_attention_mask
+        token_type_ids[i]=this_token_type_ids
+
+    input_ids=input_ids.to(device)
+    attention_mask=attention_mask.to(device)
+    token_type_ids=token_type_ids.to(device)
+
+    start_positions=torch.tensor(start_indices,dtype=torch.long,device=device)
+    end_positions=torch.tensor(end_indices,dtype=torch.long,device=device)
 
     ret={
         "input_ids":input_ids,
@@ -193,22 +229,33 @@ def create_eval_model_inputs(
             context=context[:context_max_length]
             contexts.append(context)
 
-    questions=[]
-    for i in range(len(top_k_titles)):
-        questions.append(question)
+    num_contexts=len(contexts)
 
-    encode=tokenizer.encode_plus(
-        questions,
-        contexts,
-        padding="max_length",
-        max_length=max_length,
-        truncation="only_second",
-        return_tensors="pt"
-    )
+    input_ids=torch.empty(num_contexts,max_length,dtype=torch.long)
+    attention_mask=torch.empty(num_contexts,max_length,dtype=torch.long)
+    token_type_ids=torch.empty(num_contexts,max_length,dtype=torch.long)
 
-    input_ids=encode["input_ids"].to(device)
-    attention_mask=encode["attention_mask"].to(device)
-    token_type_ids=encode["token_type_ids"].to(device)
+    for i in range(num_contexts):
+        encode=tokenizer.encode_plus(
+            question,
+            contexts[i],
+            padding="max_length",
+            max_length=max_length,
+            truncation="only_second",
+            return_tensors="pt"
+        )
+
+        this_input_ids=torch.squeeze(encode["input_ids"])
+        this_attention_mask=torch.squeeze(encode["attention_mask"])
+        this_token_type_ids=torch.squeeze(encode["token_type_ids"])
+
+        input_ids[i]=this_input_ids
+        attention_mask[i]=this_attention_mask
+        token_type_ids[i]=this_token_type_ids
+
+    input_ids=input_ids.to(device)
+    attention_mask=attention_mask.to(device)
+    token_type_ids=token_type_ids.to(device)
 
     ret={
         "input_ids":input_ids,
@@ -273,7 +320,9 @@ def eval(
     max_length:int,
     wikipedia_data_root_dir:Path,
     eval_batch_size:int,
-    context_max_length:int):
+    context_max_length:int,
+    limit_num_top_k:int,
+    mul_retrieval_scores:bool):
     model.eval()
 
     question_count=0
@@ -289,11 +338,15 @@ def eval(
     #コマンドライン引数で設定するバッチサイズ(eval_batch_size)は、
     #一度にいくつの記事をモデルに入力するかを指定するためのもの
     for batch in eval_dataloader:
-        qid=batch["qid"][0]
-        question=batch["question"][0]
-        this_answers=batch["answers"][0]
-        top_k_titles=batch["top_k_titles"][0]
-        top_k_scores=batch["top_k_scores"][0]
+        qid=batch["qid"]
+        question=batch["question"]
+        this_answers=batch["answers"]
+        top_k_titles=batch["top_k_titles"]
+        top_k_scores=batch["top_k_scores"]
+
+        if limit_num_top_k is not None:
+            top_k_titles=top_k_titles[:limit_num_top_k]
+            top_k_scores=top_k_scores[:limit_num_top_k]
 
         inputs=create_eval_model_inputs(
             tokenizer,
@@ -336,8 +389,8 @@ def eval(
                 start_logits=start_logits.cpu()
                 end_logits=end_logits.cpu()
 
-                this_start_scores,this_start_indices=torch.max(start_logits,dim=0)
-                this_end_scores,this_end_indices=torch.max(end_logits,dim=0)
+                this_start_scores,this_start_indices=torch.max(start_logits,dim=1)
+                this_end_scores,this_end_indices=torch.max(end_logits,dim=1)
 
                 start_indices=torch.cat([start_indices,this_start_indices],dim=0)
                 end_indices=torch.cat([end_indices,this_end_indices],dim=0)
@@ -345,8 +398,9 @@ def eval(
                 this_plausibility_scores=torch.mul(this_start_scores,this_end_scores)
                 plausibility_scores=torch.cat([plausibility_scores,this_plausibility_scores],dim=0)
 
-        for i in range(len(top_k_titles)):
-            plausibility_scores[i]*=top_k_scores[i]
+        if mul_retrieval_scores:
+            for i in range(len(top_k_titles)):
+                plausibility_scores[i]*=top_k_scores[i]
 
         most_plausible_answer_index=torch.argmax(plausibility_scores,dim=0).item()
         answer_start_index=start_indices[most_plausible_answer_index].item()
@@ -385,6 +439,7 @@ def main(args):
     train_samples_filepath:str=args.train_samples_filepath
     eval_samples_filepath:str=args.eval_samples_filepath
     limit_num_train_samples:int=args.limit_num_train_samples
+    limit_num_eval_samples:int=args.limit_num_eval_samples
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
     bert_model_name:str=args.bert_model_name
     results_save_dirname:str=args.results_save_dirname
@@ -395,6 +450,8 @@ def main(args):
     eval_batch_size:int=args.eval_batch_size
     logging_steps:int=args.logging_steps
     context_max_length:int=args.context_max_length
+    limit_num_top_k:int=args.limit_num_top_k
+    mul_retrieval_scores:bool=args.mul_retrieval_scores
 
     logger.info("モデルの学習を行う準備をしています...")
 
@@ -423,8 +480,8 @@ def main(args):
 
     logger.info("学習データの数: {}".format(len(train_dataset)))
 
-    eval_dataset=create_eval_dataset(eval_samples_filepath)
-    eval_dataloader=DataLoader(eval_dataset,batch_size=1,shuffle=False)
+    eval_dataset=create_eval_dataset(eval_samples_filepath,limit_num_samples=limit_num_eval_samples)
+    eval_dataloader=DataLoader(eval_dataset,batch_size=1,shuffle=False,collate_fn=collate_fn_for_eval_dataset)
 
     logger.info("評価データの数: {}".format(len(eval_dataset)))
 
@@ -440,7 +497,7 @@ def main(args):
             train_dataloader,
             optimizer,
             tokenizer,
-            config.max_length,
+            config.max_position_embeddings,
             wikipedia_data_root_dir,
             logging_steps,
             context_max_length
@@ -454,10 +511,12 @@ def main(args):
             model,
             eval_dataloader,
             tokenizer,
-            config.max_length,
+            config.max_position_embeddings,
             wikipedia_data_root_dir,
             eval_batch_size,
-            context_max_length
+            context_max_length,
+            limit_num_top_k,
+            mul_retrieval_scores
         )
 
         eval_accuracy=eval_results["accuracy"]
@@ -494,18 +553,21 @@ def main(args):
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples.jsonl")
-    parser.add_argument("--eval_samples_filepath",type=str,default="../Data/Retriever/dev_top_k_samples.jsonl")
+    parser.add_argument("--eval_samples_filepath",type=str,default="../Data/Retriever/dev_top_ks.jsonl")
     parser.add_argument("--limit_num_train_samples",type=int)
+    parser.add_argument("--limit_num_eval_samples",type=int)
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
     parser.add_argument("--results_save_dirname",type=str,default="../Data/Reader")
     parser.add_argument("--learning_rate",type=float,default=1e-5)
     parser.add_argument("--num_epochs",type=int,default=5)
     parser.add_argument("--resume_epoch",type=int)
-    parser.add_argument("--train_batch_size",type=int,default=16)
+    parser.add_argument("--train_batch_size",type=int,default=8)
     parser.add_argument("--eval_batch_size",type=int,default=16)
     parser.add_argument("--logging_steps",type=int,default=100)
     parser.add_argument("--context_max_length",type=int,default=3000)
+    parser.add_argument("--limit_num_top_k",type=int)
+    parser.add_argument("--mul_retrieval_scores",action="store_true")
     args=parser.parse_args()
 
     main(args)

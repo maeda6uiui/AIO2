@@ -392,6 +392,9 @@ def eval(
                 this_start_scores,this_start_indices=torch.max(start_logits,dim=1)
                 this_end_scores,this_end_indices=torch.max(end_logits,dim=1)
 
+                this_start_scores=torch.softmax(this_start_scores,dim=0)
+                this_end_scores=torch.softmax(this_end_scores,dim=0)
+
                 start_indices=torch.cat([start_indices,this_start_indices],dim=0)
                 end_indices=torch.cat([end_indices,this_end_indices],dim=0)
                 

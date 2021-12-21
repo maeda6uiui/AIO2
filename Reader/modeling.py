@@ -7,6 +7,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
 from transformers import AutoConfig,AutoTokenizer,BertForQuestionAnswering
+from tqdm import tqdm
 from typing import List,Tuple
 
 logging_fmt="%(asctime)s %(levelname)s: %(message)s"
@@ -337,7 +338,7 @@ def eval(
     #問題1問を一つのバッチとするため、評価用データローダのバッチサイズは1で固定しておく
     #コマンドライン引数で設定するバッチサイズ(eval_batch_size)は、
     #一度にいくつの記事をモデルに入力するかを指定するためのもの
-    for batch in eval_dataloader:
+    for batch in tqdm(eval_dataloader):
         qid=batch["qid"]
         question=batch["question"]
         this_answers=batch["answers"]

@@ -8,7 +8,7 @@ from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
 from transformers import AutoConfig,AutoTokenizer,BertForQuestionAnswering
 from tqdm import tqdm
-from typing import List,Tuple
+from typing import List
 
 logging_fmt="%(asctime)s %(levelname)s: %(message)s"
 logging.basicConfig(format=logging_fmt)

@@ -286,7 +286,7 @@ def main(args):
     limit_num_top_k:int=args.limit_num_top_k
     mul_retrieval_scores:bool=args.mul_retrieval_scores
 
-    logger.info("モデルの学習を行う準備をしています...")
+    logger.info("モデルの評価を行う準備をしています...")
 
     results_save_dir=Path(results_save_dirname)
     results_save_dir.mkdir(parents=True,exist_ok=True)

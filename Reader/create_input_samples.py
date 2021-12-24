@@ -18,7 +18,9 @@ transformers.logging.set_verbosity_error()
 def get_md5_hash(text:str)->str:
     return hashlib.md5(text.encode()).hexdigest()
 
-def load_retrieval_results(retrieval_results_filepath:str)->Tuple[List[str],List[str],List[List[str]],List[List[str]]]:
+def load_retrieval_results(
+    retrieval_results_filepath:str,
+    limit_num_titles:int)->Tuple[List[str],List[str],List[List[str]],List[List[str]]]:
     qids=[]
     questions=[]
     answers=[]
@@ -31,7 +33,7 @@ def load_retrieval_results(retrieval_results_filepath:str)->Tuple[List[str],List
             qid=data["qid"]
             question=data["question"]
             this_answers=data["answers"]
-            this_top_k_titles=data["top_k_titles"]
+            this_top_k_titles=data["top_k_titles"][:limit_num_titles]
 
             qids.append(qid)
             questions.append(question)
@@ -85,12 +87,13 @@ def main(args):
     bert_model_name:str=args.bert_model_name
     output_filepath:str=args.output_filepath
     context_max_length:int=args.context_max_length
+    limit_num_titles:int=args.limit_num_titles
 
     logger.info("処理を行う準備をしています...")
 
     wikipedia_data_root_dir=Path(wikipedia_data_root_dirname)
 
-    qids,questions,answers,top_k_titles=load_retrieval_results(retrieval_results_filepath)
+    qids,questions,answers,top_k_titles=load_retrieval_results(retrieval_results_filepath,limit_num_titles)
 
     config=AutoConfig.from_pretrained(bert_model_name)
     tokenizer=AutoTokenizer.from_pretrained(bert_model_name)
@@ -143,6 +146,7 @@ if __name__=="__main__":
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
     parser.add_argument("--output_filepath",type=str,default="../Data/Reader/train_samples.jsonl")
     parser.add_argument("--context_max_length",type=int,default=3000)
+    parser.add_argument("--limit_num_titles",type=int,default=100)
     args=parser.parse_args()
 
     main(args)

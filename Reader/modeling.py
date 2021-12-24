@@ -358,13 +358,14 @@ def eval(
             context_max_length
         )
 
-        num_sub_batches=len(top_k_titles)//eval_batch_size
-        if len(top_k_titles)%eval_batch_size!=0:
+        num_titles=len(top_k_titles)
+
+        num_sub_batches=num_titles//eval_batch_size
+        if num_titles%eval_batch_size!=0:
             num_sub_batches+=1
 
-        plausibility_scores=torch.empty(0)
-        start_indices=torch.empty(0,dtype=torch.long)
-        end_indices=torch.empty(0,dtype=torch.long)
+        start_logits=torch.empty(0,max_length)
+        end_logits=torch.empty(0,max_length)
 
         for i in range(num_sub_batches):
             start_index=eval_batch_size*i
@@ -384,46 +385,61 @@ def eval(
             with torch.no_grad():
                 outputs=model(**sub_inputs)
 
-                start_logits=outputs["start_logits"]
-                end_logits=outputs["end_logits"]
+                this_start_logits=outputs["start_logits"]
+                this_end_logits=outputs["end_logits"]
 
-                start_logits=start_logits.cpu()
-                end_logits=end_logits.cpu()
+                this_start_logits=this_start_logits.cpu()
+                this_end_logits=this_end_logits.cpu()
 
-                start_logits=torch.softmax(start_logits,dim=1)
-                end_logits=torch.softmax(end_logits,dim=1)
+                this_start_logits=torch.softmax(this_start_logits,dim=1)
+                this_end_logits=torch.softmax(this_end_logits,dim=1)
 
-                this_start_scores,this_start_indices=torch.max(start_logits,dim=1)
-                this_end_scores,this_end_indices=torch.max(end_logits,dim=1)
+                start_logits=torch.cat([start_logits,this_start_logits],dim=0)
+                end_logits=torch.cat([end_logits,this_end_logits],dim=0)
 
-                start_indices=torch.cat([start_indices,this_start_indices],dim=0)
-                end_indices=torch.cat([end_indices,this_end_indices],dim=0)
-                
-                this_plausibility_scores=torch.mul(this_start_scores,this_end_scores)
-                plausibility_scores=torch.cat([plausibility_scores,this_plausibility_scores],dim=0)
+        start_scores,start_indices=torch.max(start_logits,dim=1)
+        end_scores,end_indices=torch.max(end_logits,dim=1)
+
+        plausibility_scores=torch.mul(start_scores,end_scores)
 
         if mul_retrieval_scores:
-            for i in range(len(top_k_titles)):
+            for i in range(num_titles):
                 plausibility_scores[i]*=top_k_scores[i]
 
-        most_plausible_answer_index=torch.argmax(plausibility_scores,dim=0).item()
-        answer_start_index=start_indices[most_plausible_answer_index].item()
-        answer_end_index=end_indices[most_plausible_answer_index].item()
+        _,plausible_article_indices=torch.topk(plausibility_scores,k=num_titles,dim=0)
 
-        answer_ids=inputs["input_ids"][most_plausible_answer_index,answer_start_index:answer_end_index+1]
+        plausible_article_exists=False
+        plausible_article_index=-1
+        answer_start_index=-1
+        answer_end_index=-1
+        for i in range(num_titles):
+            plausible_article_index=plausible_article_indices[i].item()
+            answer_start_index=start_indices[plausible_article_index].item()
+            answer_end_index=end_indices[plausible_article_index].item()
 
-        predicted_answer=tokenizer.decode(answer_ids)
-        predicted_answer=predicted_answer.replace(" ","")
+            if answer_start_index!=0 and answer_end_index!=0 and answer_start_index<=answer_end_index:
+                plausible_article_exists=True
+                break
 
-        if predicted_answer in this_answers:
-            correct_count+=1
+        predicted_answer="N/A"
+        predicted_article="N/A"
+        if plausible_article_exists:
+            answer_ids=inputs["input_ids"][plausible_article_index,answer_start_index:answer_end_index+1]
+
+            predicted_answer=tokenizer.decode(answer_ids)
+            predicted_answer=predicted_answer.replace(" ","")
+
+            if predicted_answer in this_answers:
+                correct_count+=1
+
+            predicted_article=top_k_titles[plausible_article_index]
 
         question_count+=1
 
         qids.append(qid)
         questions.append(question)
         answers.append(this_answers)
-        predicted_articles.append(top_k_titles[most_plausible_answer_index])
+        predicted_articles.append(predicted_article)
         predicted_answers.append(predicted_answer)
 
     ret={

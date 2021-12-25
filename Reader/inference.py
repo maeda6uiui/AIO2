@@ -164,6 +164,8 @@ def eval(
     question_count=0
     correct_count=0
 
+    unk_id=tokenizer.convert_tokens_to_ids("[UNK]")
+
     qids:List[str]=[]
     questions:List[str]=[]
     answers:List[List[str]]=[]
@@ -252,9 +254,13 @@ def eval(
             answer_start_index=start_indices[plausible_article_index].item()
             answer_end_index=end_indices[plausible_article_index].item()
 
-            if answer_start_index!=0 and answer_end_index!=0 and answer_start_index<=answer_end_index:
-                plausible_article_exists=True
-                break
+            if answer_start_index!=0 and answer_start_index<=answer_end_index:
+                start_id=inputs["input_ids"][plausible_article_index,answer_start_index].item()
+
+                #予測が[UNK]でない場合のみ回答とする
+                if start_id!=unk_id:
+                    plausible_article_exists=True
+                    break
 
         predicted_answer="N/A"
         predicted_article="N/A"

@@ -314,8 +314,6 @@ def train(
         outputs=model(**inputs)
         
         loss_model=outputs["loss"]
-        loss_model.backward()
-
         total_loss_model+=loss_model.item()
 
         #==========
@@ -331,11 +329,12 @@ def train(
         start_positions=inputs["start_positions"]
         targets=(start_positions!=0).float()
         loss_pcalculator=criterion_pcalculator(plausibility_scores,targets)
-        loss_pcalculator.backward()
-
         total_loss_pcalculator+=loss_pcalculator.item()
 
         #==========
+
+        loss=loss_model+loss_pcalculator
+        loss.backward()
 
         optimizer.step()
 
@@ -344,12 +343,12 @@ def train(
         if step%logging_steps==0:
             logger.info("Step: {}\tLoss (Total): {}\tLoss (Model): {}\tLoss (PCalculator): {}".format(
                     step,
-                    loss_model.item()+loss_pcalculator.item(),
+                    loss.item(),
                     loss_model.item(),
                     loss_pcalculator.item()))
 
     ret={
-        "mean_loss_total":(total_loss_model+total_loss_pcalculator)/step_count,
+        "mean_loss":(total_loss_model+total_loss_pcalculator)/step_count,
         "mean_loss_model":total_loss_model/step_count,
         "mean_loss_pcalculator":total_loss_pcalculator/step_count
     }
@@ -448,8 +447,8 @@ def eval(
                 cls_output=hidden_states[0][:,0,:]  #(N, hidden_size)
 
                 this_plausibility_scores=pcalculator(cls_output) #(N, 1)
-                this_plausibility_scores=plausibility_scores.cpu()
-                this_plausibility_scores=torch.squeeze(plausibility_scores)  #(N)
+                this_plausibility_scores=this_plausibility_scores.cpu()
+                this_plausibility_scores=torch.squeeze(this_plausibility_scores)  #(N)
 
                 plausibility_scores=torch.cat([plausibility_scores,this_plausibility_scores],dim=0)
 
@@ -599,12 +598,12 @@ def main(args):
         pcalculator_file=results_save_dir.joinpath("pcalculator_{}.pt".format(epoch))
         torch.save(pcalculator.state_dict(),pcalculator_file)
 
-        train_mean_loss_total=train_results["mean_loss_total"]
+        train_mean_loss=train_results["mean_loss"]
         train_mean_loss_model=train_results["mean_loss_model"]
         train_mean_loss_pcalculator=train_results["mean_loss_pcalculator"]
 
         logger.info("平均損失(合計): {}\t平均損失(モデル): {}\t平均損失(PCalculator): {}".format(
-            train_mean_loss_total,train_mean_loss_model,train_mean_loss_pcalculator))
+            train_mean_loss,train_mean_loss_model,train_mean_loss_pcalculator))
 
         eval_results=eval(
             model,

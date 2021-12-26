@@ -246,8 +246,8 @@ def eval(
                 cls_output=hidden_states[0][:,0,:]  #(N, hidden_size)
 
                 this_plausibility_scores=pcalculator(cls_output) #(N, 1)
-                this_plausibility_scores=plausibility_scores.cpu()
-                this_plausibility_scores=torch.squeeze(plausibility_scores)  #(N)
+                this_plausibility_scores=this_plausibility_scores.cpu()
+                this_plausibility_scores=torch.squeeze(this_plausibility_scores)  #(N)
 
                 plausibility_scores=torch.cat([plausibility_scores,this_plausibility_scores],dim=0)
 

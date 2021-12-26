@@ -321,7 +321,7 @@ def train(
         pcalculator.zero_grad()
 
         hidden_states=outputs["hidden_states"]
-        cls_output=hidden_states[0][:,0,:]  #(N, hidden_size)
+        cls_output=hidden_states[12][:,0,:]  #(N, hidden_size)
 
         plausibility_scores=pcalculator(cls_output) #(N, 1)
         plausibility_scores=torch.squeeze(plausibility_scores)  #(N)
@@ -444,7 +444,7 @@ def eval(
                 end_logits=torch.cat([end_logits,this_end_logits],dim=0)
 
                 hidden_states=outputs["hidden_states"]
-                cls_output=hidden_states[0][:,0,:]  #(N, hidden_size)
+                cls_output=hidden_states[12][:,0,:]  #(N, hidden_size)
 
                 this_plausibility_scores=pcalculator(cls_output) #(N, 1)
                 this_plausibility_scores=this_plausibility_scores.cpu()

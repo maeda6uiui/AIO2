@@ -282,8 +282,7 @@ def train(
     model.train()
 
     step_count=0
-    total_loss_start=0
-    total_loss_end=0
+    total_loss_span=0
     total_loss_plausibility=0
 
     for step,batch in enumerate(train_dataloader):
@@ -314,20 +313,17 @@ def train(
 
         step_count+=1
 
-        loss_start=outputs["loss_start"]
-        loss_end=outputs["loss_end"]
+        loss_span=outputs["loss_span"]
         loss_plausibility=outputs["loss_plausibility"]
-        total_loss_start+=loss_start
-        total_loss_end+=loss_end
+        total_loss_span+=loss_span
         total_loss_plausibility+=loss_plausibility
 
         if step%logging_steps==0:
             logger.info("Step {}".format(step))
-            logger.info("Loss > Total: {}\tStart: {}\tEnd: {}\tPlausibility: {}".format(loss.item(),loss_start,loss_end,loss_plausibility))
+            logger.info("Loss > Total: {}\tSpan: {}\tPlausibility: {}".format(loss.item(),loss_span,loss_plausibility))
 
     ret={
-        "mean_loss_start":total_loss_start/step_count,
-        "mean_loss_end":total_loss_end/step_count,
+        "mean_loss_span":total_loss_span/step_count,
         "mean_loss_plausibility":total_loss_plausibility/step_count
     }
     return ret
@@ -560,15 +556,13 @@ def main(args):
         checkpoint_file=results_save_dir.joinpath("checkpoint_{}.pt".format(epoch))
         torch.save(model.state_dict(),checkpoint_file)
 
-        mean_loss_start=train_results["mean_loss_start"]
-        mean_loss_end=train_results["mean_loss_end"]
+        mean_loss_span=train_results["mean_loss_span"]
         mean_loss_plausibility=train_results["mean_loss_plausibility"]
 
         logger.info("平均損失")
-        logger.info("> Total: {}\tStart: {}\tEnd: {}\tPlausibility: {}".format(
-            mean_loss_start+mean_loss_end+mean_loss_plausibility,
-            mean_loss_start,
-            mean_loss_end,
+        logger.info("> Total: {}\tSpan: {}\tPlausibility: {}".format(
+            mean_loss_span+mean_loss_plausibility,
+            mean_loss_span,
             mean_loss_plausibility
             )
         )

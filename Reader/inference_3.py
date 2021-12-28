@@ -255,11 +255,19 @@ def eval(
             answer_start_index=start_indices[plausible_article_index].item()
             answer_end_index=end_indices[plausible_article_index].item()
 
-            if answer_start_index!=0 and answer_start_index<=answer_end_index:
-                answer_ids=inputs["input_ids"][plausible_article_index,answer_start_index:answer_end_index+1].tolist()
-                if unk_id not in answer_ids:
-                    plausible_article_exists=True
-                    break
+            if answer_start_index==0 or answer_end_index==0:
+                continue
+            if answer_start_index>answer_end_index:
+                continue
+            if answer_end_index-answer_start_index>20:
+                continue
+
+            answer_ids=inputs["input_ids"][plausible_article_index,answer_start_index:answer_end_index+1].tolist()
+            if unk_id in answer_ids:
+                continue
+
+            plausible_article_exists=True
+            break
 
         predicted_answer="N/A"
         predicted_article="N/A"

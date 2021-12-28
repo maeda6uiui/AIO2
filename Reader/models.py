@@ -102,6 +102,7 @@ class Reader(nn.Module):
 
             loss_start=0
             loss_end=0
+            positive_count=0
             for i in range(batch_size):
                 if start_positions[i]!=0 and end_positions[i]!=0:
                     this_start_logits=torch.unsqueeze(start_logits[i],0)    #(1, sequence_length)
@@ -112,6 +113,12 @@ class Reader(nn.Module):
 
                     loss_start+=criterion_span(this_start_logits,start_position)
                     loss_end+=criterion_span(this_end_logits,end_position)
+
+                    positive_count+=1
+
+            if positive_count!=0:
+                loss_start/=positive_count
+                loss_end/=positive_count
 
             plausibility_targets=(start_positions!=0).float()
             loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets)

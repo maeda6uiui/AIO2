@@ -256,37 +256,23 @@ def eval(
             answer_end_index=end_indices[plausible_article_index].item()
 
             if answer_start_index!=0 and answer_start_index<=answer_end_index:
-                plausible_article_exists=True
-                break
+                answer_ids=inputs["input_ids"][plausible_article_index,answer_start_index:answer_end_index+1].tolist()
+                if unk_id not in answer_ids:
+                    plausible_article_exists=True
+                    break
 
         predicted_answer="N/A"
         predicted_article="N/A"
         if plausible_article_exists:
-            predicted_article=top_k_titles[plausible_article_index]
-
             answer_ids=inputs["input_ids"][plausible_article_index,answer_start_index:answer_end_index+1].tolist()
 
-            #予測結果に[UNK]が含まれる場合は、再度Tokenizeを行って対応するトークンを取得する
-            if unk_id in answer_ids:
-                question_tokens=tokenizer.tokenize(question)
-
-                title_hash=get_md5_hash(predicted_article)
-                text_file=wikipedia_data_root_dir.joinpath(title_hash,"text.txt")
-                with text_file.open("r") as r:
-                    context=r.read()[:context_max_length]
-
-                context_tokens=tokenizer.tokenize(context)
-
-                tokens=["[CLS]"]+question_tokens+["[SEP]"]+context_tokens+["[SEP]"]
-
-                predicted_answer="".join(tokens[answer_start_index:answer_end_index+1])
-                predicted_answer=predicted_answer.replace("#","")
-            else:
-                predicted_answer=tokenizer.decode(answer_ids)
-                predicted_answer=predicted_answer.replace(" ","")
+            predicted_answer=tokenizer.decode(answer_ids)
+            predicted_answer=predicted_answer.replace(" ","")
 
             if predicted_answer in this_answers:
                 correct_count+=1
+
+            predicted_article=top_k_titles[plausible_article_index]
 
         question_count+=1
 

@@ -27,14 +27,24 @@ class Reader(nn.Module):
 
         config=BertConfig.from_pretrained(bert_model_name)
 
-        self.seq_span=nn.Sequential(
+        self.seq_start=nn.Sequential(
             nn.Linear(config.hidden_size*4,config.hidden_size*2),
             nn.Mish(),
             nn.Linear(config.hidden_size*2,config.hidden_size),
             nn.Mish(),
             nn.Linear(config.hidden_size,256),
             nn.Mish(),
-            nn.Linear(256,2),
+            nn.Linear(256,1),
+            nn.Sigmoid()
+        )
+        self.seq_end=nn.Sequential(
+            nn.Linear(config.hidden_size*4,config.hidden_size*2),
+            nn.Mish(),
+            nn.Linear(config.hidden_size*2,config.hidden_size),
+            nn.Mish(),
+            nn.Linear(config.hidden_size,256),
+            nn.Mish(),
+            nn.Linear(256,1),
             nn.Sigmoid()
         )
         self.seq_plausibility=nn.Sequential(
@@ -70,18 +80,19 @@ class Reader(nn.Module):
         for i in range(1,4):
             concat_hidden_states=torch.cat([concat_hidden_states,hidden_states[i]],dim=2)
 
-        span_logits=self.seq_span(concat_hidden_states) #(N, sequence_length, 2)
-        start_logits,end_logits=torch.split(span_logits,1,dim=2)    #(N, sequence_length, 1)
-
+        start_logits=self.seq_start(concat_hidden_states)   #(N, sequence_length, 1)
         start_logits=torch.squeeze(start_logits)    #(N, sequence_length)
-        end_logits=torch.squeeze(end_logits)    #(N, sequence_length)
+
+        end_logits=self.seq_end(concat_hidden_states)
+        end_logits=torch.squeeze(end_logits)
 
         cls_vectors=concat_hidden_states[:,0,:] #(N, hidden_size)
         plausibility_scores=self.seq_plausibility(cls_vectors)  #(M, 1)
         plausibility_scores=torch.squeeze(plausibility_scores)  #(N)
 
         loss=None
-        loss_span=None
+        loss_start=None
+        loss_end=None
         loss_plausibility=None
         if start_positions is not None and end_positions is not None:
             criterion_span=nn.CrossEntropyLoss()
@@ -89,7 +100,8 @@ class Reader(nn.Module):
 
             batch_size=start_positions.size(0)
 
-            loss_span=0
+            loss_start=0
+            loss_end=0
             positive_count=0
             for i in range(batch_size):
                 if start_positions[i]!=0 and end_positions[i]!=0:
@@ -99,20 +111,21 @@ class Reader(nn.Module):
                     start_position=torch.unsqueeze(start_positions[i],0)    #(1)
                     end_position=torch.unsqueeze(end_positions[i],0)    #(1)
 
-                    loss_start=criterion_span(this_start_logits,start_position)
-                    loss_end=criterion_span(this_end_logits,end_position)
-                    loss_span+=loss_start+loss_end
+                    loss_start+=criterion_span(this_start_logits,start_position)
+                    loss_end+=criterion_span(this_end_logits,end_position)
 
                     positive_count+=1
 
             if positive_count!=0:
-                loss_span/=positive_count
+                loss_start/=positive_count
+                loss_end/=positive_count
 
             plausibility_targets=(start_positions!=0).float()
             loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets)
 
-            loss=loss_span+loss_plausibility
-            loss_span=loss_span.item()
+            loss=loss_start+loss_end+loss_plausibility
+            loss_start=loss_start.item()
+            loss_end=loss_end.item()
             loss_plausibility=loss_plausibility.item()
 
         ret={
@@ -121,7 +134,8 @@ class Reader(nn.Module):
             "plausibility_scores":plausibility_scores,
 
             "loss":loss,
-            "loss_span":loss_span,
+            "loss_start":loss_start,
+            "loss_end":loss_end,
             "loss_plausibility":loss_plausibility
         }
         return ret

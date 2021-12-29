@@ -34,8 +34,7 @@ class Reader(nn.Module):
             nn.Mish(),
             nn.Linear(config.hidden_size,256),
             nn.Mish(),
-            nn.Linear(256,2),
-            nn.Sigmoid()
+            nn.Linear(256,2)
         )
         self.seq_plausibility=nn.Sequential(
             nn.Linear(config.hidden_size*4,config.hidden_size*2),

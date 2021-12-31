@@ -34,6 +34,7 @@ class Reader(nn.Module):
             nn.Mish(),
             nn.Linear(config.hidden_size,256),
             nn.Mish(),
+            nn.Dropout(p=0.1),
             nn.Linear(256,2)
         )
         self.seq_plausibility=nn.Sequential(
@@ -89,29 +90,29 @@ class Reader(nn.Module):
             batch_size=start_positions.size(0)
 
             loss_span=0
-            positive_count=0
             for i in range(batch_size):
+                this_start_logits=torch.unsqueeze(start_logits[i],0)    #(1, sequence_length)
+                this_end_logits=torch.unsqueeze(end_logits[i],0)    #(1, sequence_length)
+
+                start_position=torch.unsqueeze(start_positions[i],0)    #(1)
+                end_position=torch.unsqueeze(end_positions[i],0)    #(1)
+
+                loss_start=criterion_span(this_start_logits,start_position)
+                loss_end=criterion_span(this_end_logits,end_position)
+                this_loss_span=loss_start*2+loss_end
+
                 if start_positions[i]!=0 and end_positions[i]!=0:
-                    this_start_logits=torch.unsqueeze(start_logits[i],0)    #(1, sequence_length)
-                    this_end_logits=torch.unsqueeze(end_logits[i],0)    #(1, sequence_length)
+                    this_loss_span*=2
 
-                    start_position=torch.unsqueeze(start_positions[i],0)    #(1)
-                    end_position=torch.unsqueeze(end_positions[i],0)    #(1)
+                loss_span+=this_loss_span
 
-                    loss_start=criterion_span(this_start_logits,start_position)
-                    loss_end=criterion_span(this_end_logits,end_position)
-                    loss_span+=loss_start+loss_end
-
-                    positive_count+=1
-
-            if positive_count!=0:
-                loss_span/=positive_count
+            loss_span/=batch_size
 
             plausibility_targets=(start_positions!=0).float()
             loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets)
 
             loss=loss_span+loss_plausibility
-            loss_span=loss_span.item() if loss_span!=0 else 0
+            loss_span=loss_span.item()
             loss_plausibility=loss_plausibility.item()
 
         ret={

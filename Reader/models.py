@@ -90,29 +90,29 @@ class Reader(nn.Module):
             batch_size=start_positions.size(0)
 
             loss_span=0
+            positive_count=0
             for i in range(batch_size):
-                this_start_logits=torch.unsqueeze(start_logits[i],0)    #(1, sequence_length)
-                this_end_logits=torch.unsqueeze(end_logits[i],0)    #(1, sequence_length)
-
-                start_position=torch.unsqueeze(start_positions[i],0)    #(1)
-                end_position=torch.unsqueeze(end_positions[i],0)    #(1)
-
-                loss_start=criterion_span(this_start_logits,start_position)
-                loss_end=criterion_span(this_end_logits,end_position)
-                this_loss_span=loss_start*2+loss_end
-
                 if start_positions[i]!=0 and end_positions[i]!=0:
-                    this_loss_span*=2
+                    this_start_logits=torch.unsqueeze(start_logits[i],0)    #(1, sequence_length)
+                    this_end_logits=torch.unsqueeze(end_logits[i],0)    #(1, sequence_length)
 
-                loss_span+=this_loss_span
+                    start_position=torch.unsqueeze(start_positions[i],0)    #(1)
+                    end_position=torch.unsqueeze(end_positions[i],0)    #(1)
 
-            loss_span/=batch_size
+                    loss_start=criterion_span(this_start_logits,start_position)
+                    loss_end=criterion_span(this_end_logits,end_position)
+                    loss_span+=loss_start+loss_end
+
+                    positive_count+=1
+
+            if positive_count!=0:
+                loss_span/=positive_count
 
             plausibility_targets=(start_positions!=0).float()
             loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets)
 
             loss=loss_span+loss_plausibility
-            loss_span=loss_span.item()
+            loss_span=loss_span.item() if loss_span!=0 else 0
             loss_plausibility=loss_plausibility.item()
 
         ret={

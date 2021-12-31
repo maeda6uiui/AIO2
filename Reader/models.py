@@ -111,7 +111,7 @@ class Reader(nn.Module):
             loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets)
 
             loss=loss_span+loss_plausibility
-            loss_span=loss_span.item()
+            loss_span=loss_span.item() if loss_span!=0 else 0
             loss_plausibility=loss_plausibility.item()
 
         ret={

@@ -613,7 +613,7 @@ if __name__=="__main__":
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
     parser.add_argument("--results_save_dirname",type=str,default="../Data/Reader")
-    parser.add_argument("--learning_rate",type=float,default=2e-5)
+    parser.add_argument("--learning_rate",type=float,default=1e-5)
     parser.add_argument("--num_epochs",type=int,default=3)
     parser.add_argument("--resume_epoch",type=int)
     parser.add_argument("--train_batch_size",type=int,default=12)

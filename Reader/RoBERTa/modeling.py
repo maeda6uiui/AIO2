@@ -4,7 +4,6 @@ import json
 import logging
 import subprocess
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
@@ -15,6 +14,9 @@ from typing import List
 import sys
 sys.path.append(".")
 from models import Reader
+
+import os
+os.environ["TOKENIZERS_PARALLELISM"]="true"
 
 logging_fmt="%(asctime)s %(levelname)s: %(message)s"
 logging.basicConfig(format=logging_fmt)
@@ -161,19 +163,24 @@ def create_eval_dataset(samples_filepath:str,limit_num_samples:int=None)->Reader
     return dataset
 
 def wakati_with_jumanpp(text:str)->str:
-    p1=subprocess.Popen(["echo",text],stdout=subprocess.PIPE)
-    p2=subprocess.Popen(["jumanpp"],stdin=p1.stdout,stdout=subprocess.PIPE)
-
-    p1.stdout.close()
-
-    output=p2.communicate()[0]
-    lines=output.decode("utf8").splitlines()
-    lines.pop()
+    sentences=text.split("。")
+    for i in range(len(sentences)):
+        sentences[i]+="。"
 
     wakatis=[]
-    for line in lines:
-        wakati=line.split(" ")[0]
-        wakatis.append(wakati)
+    for sentence in sentences:
+        p1=subprocess.Popen(["echo",sentence],stdout=subprocess.PIPE)
+        p2=subprocess.Popen(["jumanpp"],stdin=p1.stdout,stdout=subprocess.PIPE)
+
+        p1.stdout.close()
+
+        output=p2.communicate()[0]
+        lines=output.decode("utf8").splitlines()
+        lines.pop()
+
+        for line in lines:
+            wakati=line.split(" ")[0]
+            wakatis.append(wakati)
 
     return " ".join(wakatis)
 
@@ -539,8 +546,6 @@ def main(args):
 
         logger.info("{}よりチェックポイントを読み込みました".format(str(checkpoint_file)))
 
-    model.to(device)
-
     optimizer=optim.AdamW(model.parameters(),lr=learning_rate)
 
     train_dataset=create_train_dataset(train_samples_filepath,limit_num_samples=limit_num_train_samples)
@@ -565,7 +570,7 @@ def main(args):
             train_dataloader,
             optimizer,
             tokenizer,
-            config.max_position_embeddings,
+            config.max_position_embeddings-1,
             wikipedia_data_root_dir,
             logging_steps,
             context_max_length
@@ -590,7 +595,7 @@ def main(args):
             model,
             eval_dataloader,
             tokenizer,
-            config.max_position_embeddings,
+            config.max_position_embeddings-1,
             wikipedia_data_root_dir,
             eval_batch_size,
             context_max_length,

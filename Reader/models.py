@@ -44,6 +44,7 @@ class Reader(nn.Module):
             nn.Mish(),
             nn.Linear(config.hidden_size,256),
             nn.Mish(),
+            nn.Dropout(p=0.1),
             nn.Linear(256,1),
             nn.Sigmoid()
         )

@@ -108,7 +108,10 @@ def wakati_with_jumanpp(jumanpp:Juman,re_for_split,text:str)->str:
     
     wakatis=[]
     for chunk in chunks:
-        result=jumanpp.analysis(chunk)
+        try:
+            result=jumanpp.analysis(chunk)
+        except ValueError:
+            continue
 
         for mrph in result.mrph_list():
             wakatis.append(mrph.midasi)

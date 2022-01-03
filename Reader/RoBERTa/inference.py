@@ -15,9 +15,6 @@ import sys
 sys.path.append(".")
 from models import Reader
 
-import os
-os.environ["TOKENIZERS_PARALLELISM"]="true"
-
 logging_fmt="%(asctime)s %(levelname)s: %(message)s"
 logging.basicConfig(format=logging_fmt)
 logger=logging.getLogger(__name__)

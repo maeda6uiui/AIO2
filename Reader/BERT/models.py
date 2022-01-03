@@ -77,8 +77,8 @@ class Reader(nn.Module):
         start_logits=torch.squeeze(start_logits)    #(N, sequence_length)
         end_logits=torch.squeeze(end_logits)    #(N, sequence_length)
 
-        cls_vectors=concat_hidden_states[:,0,:] #(N, hidden_size)
-        plausibility_scores=self.seq_plausibility(cls_vectors)  #(M, 1)
+        cls_vectors=concat_hidden_states[:,0,:] #(N, hidden_size*4)
+        plausibility_scores=self.seq_plausibility(cls_vectors)  #(N, 1)
         plausibility_scores=torch.squeeze(plausibility_scores)  #(N)
 
         loss=None

@@ -167,7 +167,7 @@ def wakati_with_jumanpp(jumanpp:Juman,re_for_split,text:str)->str:
     for chunk in chunks:
         try:
             result=jumanpp.analysis(chunk)
-        except ValueError:
+        except:
             continue
 
         for mrph in result.mrph_list():

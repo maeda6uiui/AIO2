@@ -649,7 +649,7 @@ if __name__=="__main__":
     parser.add_argument("--eval_samples_filepath",type=str,default="../../Data/Retriever/dev_top_ks.jsonl")
     parser.add_argument("--limit_num_train_samples",type=int)
     parser.add_argument("--limit_num_eval_samples",type=int)
-    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../../Data/WakatiWithJumanpp")
+    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../../Data/Wikipedia")
     parser.add_argument("--model_name",type=str,default="nlp-waseda/roberta-base-japanese")
     parser.add_argument("--results_save_dirname",type=str,default="../../Data/Reader")
     parser.add_argument("--learning_rate",type=float,default=1e-5)

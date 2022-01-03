@@ -2,11 +2,12 @@ import argparse
 import hashlib
 import json
 import logging
-import subprocess
+import re
 import torch
 from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
-from transformers import AutoConfig,AutoTokenizer,BertForQuestionAnswering
+from pyknp import Juman
+from transformers import AutoConfig,AutoTokenizer
 from tqdm import tqdm
 from typing import List
 
@@ -105,30 +106,22 @@ def create_eval_dataset(samples_filepath:str,limit_num_samples:int=None)->Reader
 
     return dataset
 
-def wakati_with_jumanpp(text:str)->str:
-    sentences=text.split("。")
-    for i in range(len(sentences)):
-        sentences[i]+="。"
-
+def wakati_with_jumanpp(jumanpp:Juman,re_for_split,text:str)->str:
+    chunks:List[str]=re_for_split.split(text)
+    
     wakatis=[]
-    for sentence in sentences:
-        p1=subprocess.Popen(["echo",sentence],stdout=subprocess.PIPE)
-        p2=subprocess.Popen(["jumanpp"],stdin=p1.stdout,stdout=subprocess.PIPE)
+    for chunk in chunks:
+        result=jumanpp.analysis(chunk)
 
-        p1.stdout.close()
-
-        output=p2.communicate()[0]
-        lines=output.decode("utf8").splitlines()
-        lines.pop()
-
-        for line in lines:
-            wakati=line.split(" ")[0]
-            wakatis.append(wakati)
+        for mrph in result.mrph_list():
+            wakatis.append(mrph.midasi)
 
     return " ".join(wakatis)
 
 def create_eval_model_inputs(
     tokenizer:AutoTokenizer,
+    jumanpp:Juman,
+    re_for_split,
     max_length:int,
     wikipedia_data_root_dir:Path,
     question:str,
@@ -150,10 +143,10 @@ def create_eval_model_inputs(
     attention_mask=torch.empty(num_contexts,max_length,dtype=torch.long)
     token_type_ids=torch.empty(num_contexts,max_length,dtype=torch.long)
 
-    question_wakati=wakati_with_jumanpp(question)
+    question_wakati=wakati_with_jumanpp(jumanpp,re_for_split,question)
 
     for i in range(num_contexts):
-        context_wakati=wakati_with_jumanpp(contexts[i])
+        context_wakati=wakati_with_jumanpp(jumanpp,re_for_split,contexts[i])
 
         encode=tokenizer.encode_plus(
             question_wakati,
@@ -187,6 +180,8 @@ def eval(
     model:Reader,
     eval_dataloader:DataLoader,
     tokenizer:AutoTokenizer,
+    jumanpp:Juman,
+    re_for_split,
     max_length:int,
     wikipedia_data_root_dir:Path,
     eval_batch_size:int,
@@ -221,6 +216,8 @@ def eval(
 
         inputs=create_eval_model_inputs(
             tokenizer,
+            jumanpp,
+            re_for_split,
             max_length,
             wikipedia_data_root_dir,
             question,
@@ -359,6 +356,9 @@ def main(args):
     model.load_state_dict(state_dict)
     model.to(device)
 
+    jumanpp=Juman()
+    re_for_split=re.compile("(?<=。)")
+
     eval_dataset=create_eval_dataset(eval_samples_filepath,limit_num_samples=limit_num_eval_samples)
     eval_dataloader=DataLoader(eval_dataset,batch_size=1,shuffle=False,collate_fn=collate_fn_for_eval_dataset)
 
@@ -370,6 +370,8 @@ def main(args):
         model,
         eval_dataloader,
         tokenizer,
+        jumanpp,
+        re_for_split,
         config.max_position_embeddings-1,
         wikipedia_data_root_dir,
         eval_batch_size,
@@ -417,7 +419,7 @@ if __name__=="__main__":
     parser.add_argument("--model_name",type=str,default="nlp-waseda/roberta-base-japanese")
     parser.add_argument("--results_save_dirname",type=str,default="../../Data/Reader")
     parser.add_argument("--eval_batch_size",type=int,default=16)
-    parser.add_argument("--context_max_length",type=int,default=3000)
+    parser.add_argument("--context_max_length",type=int,default=1500)
     parser.add_argument("--limit_num_top_k",type=int)
     args=parser.parse_args()
 

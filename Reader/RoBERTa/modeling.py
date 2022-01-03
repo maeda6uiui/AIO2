@@ -2,11 +2,12 @@ import argparse
 import hashlib
 import json
 import logging
-import subprocess
+import re
 import torch
 import torch.optim as optim
 from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
+from pyknp import Juman
 from transformers import AutoConfig,AutoTokenizer
 from tqdm import tqdm
 from typing import List
@@ -162,30 +163,22 @@ def create_eval_dataset(samples_filepath:str,limit_num_samples:int=None)->Reader
 
     return dataset
 
-def wakati_with_jumanpp(text:str)->str:
-    sentences=text.split("。")
-    for i in range(len(sentences)):
-        sentences[i]+="。"
-
+def wakati_with_jumanpp(jumanpp:Juman,re_for_split,text:str)->str:
+    chunks:List[str]=re_for_split.split(text)
+    
     wakatis=[]
-    for sentence in sentences:
-        p1=subprocess.Popen(["echo",sentence],stdout=subprocess.PIPE)
-        p2=subprocess.Popen(["jumanpp"],stdin=p1.stdout,stdout=subprocess.PIPE)
+    for chunk in chunks:
+        result=jumanpp.analysis(chunk)
 
-        p1.stdout.close()
-
-        output=p2.communicate()[0]
-        lines=output.decode("utf8").splitlines()
-        lines.pop()
-
-        for line in lines:
-            wakati=line.split(" ")[0]
-            wakatis.append(wakati)
+        for mrph in result.mrph_list():
+            wakatis.append(mrph.midasi)
 
     return " ".join(wakatis)
 
 def create_train_model_inputs(
     tokenizer:AutoTokenizer,
+    jumanpp:Juman,
+    re_for_split,
     max_length:int,
     wikipedia_data_root_dir:Path,
     questions:List[str],
@@ -210,8 +203,8 @@ def create_train_model_inputs(
     token_type_ids=torch.empty(batch_size,max_length,dtype=torch.long)
 
     for i in range(batch_size):
-        question_wakati=wakati_with_jumanpp(questions[i])
-        context_wakati=wakati_with_jumanpp(contexts[i])
+        question_wakati=wakati_with_jumanpp(jumanpp,re_for_split,questions[i])
+        context_wakati=wakati_with_jumanpp(jumanpp,re_for_split,contexts[i])
 
         encode=tokenizer.encode_plus(
             question_wakati,
@@ -248,6 +241,8 @@ def create_train_model_inputs(
 
 def create_eval_model_inputs(
     tokenizer:AutoTokenizer,
+    jumanpp:Juman,
+    re_for_split,
     max_length:int,
     wikipedia_data_root_dir:Path,
     question:str,
@@ -269,10 +264,10 @@ def create_eval_model_inputs(
     attention_mask=torch.empty(num_contexts,max_length,dtype=torch.long)
     token_type_ids=torch.empty(num_contexts,max_length,dtype=torch.long)
 
-    question_wakati=wakati_with_jumanpp(question)
+    question_wakati=wakati_with_jumanpp(jumanpp,re_for_split,question)
 
     for i in range(num_contexts):
-        context_wakati=wakati_with_jumanpp(contexts[i])
+        context_wakati=wakati_with_jumanpp(jumanpp,re_for_split,contexts[i])
 
         encode=tokenizer.encode_plus(
             question_wakati,
@@ -307,6 +302,8 @@ def train(
     train_dataloader:DataLoader,
     optimizer:optim.Optimizer,
     tokenizer:AutoTokenizer,
+    jumanpp:Juman,
+    re_for_split,
     max_length:int,
     wikipedia_data_root_dir:Path,
     logging_steps:int,
@@ -325,6 +322,8 @@ def train(
 
         inputs=create_train_model_inputs(
             tokenizer,
+            jumanpp,
+            re_for_split,
             max_length,
             wikipedia_data_root_dir,
             questions,
@@ -364,6 +363,8 @@ def eval(
     model:Reader,
     eval_dataloader:DataLoader,
     tokenizer:AutoTokenizer,
+    jumanpp:Juman,
+    re_for_split,
     max_length:int,
     wikipedia_data_root_dir:Path,
     eval_batch_size:int,
@@ -398,6 +399,8 @@ def eval(
 
         inputs=create_eval_model_inputs(
             tokenizer,
+            jumanpp,
+            re_for_split,
             max_length,
             wikipedia_data_root_dir,
             question,
@@ -546,7 +549,12 @@ def main(args):
 
         logger.info("{}よりチェックポイントを読み込みました".format(str(checkpoint_file)))
 
+    model.to(device)
+
     optimizer=optim.AdamW(model.parameters(),lr=learning_rate)
+
+    jumanpp=Juman()
+    re_for_split=re.compile("(?<=。)")
 
     train_dataset=create_train_dataset(train_samples_filepath,limit_num_samples=limit_num_train_samples)
     train_dataloader=DataLoader(train_dataset,batch_size=train_batch_size,shuffle=True)
@@ -570,6 +578,8 @@ def main(args):
             train_dataloader,
             optimizer,
             tokenizer,
+            jumanpp,
+            re_for_split,
             config.max_position_embeddings-1,
             wikipedia_data_root_dir,
             logging_steps,
@@ -595,6 +605,8 @@ def main(args):
             model,
             eval_dataloader,
             tokenizer,
+            jumanpp,
+            re_for_split,
             config.max_position_embeddings-1,
             wikipedia_data_root_dir,
             eval_batch_size,
@@ -640,7 +652,7 @@ if __name__=="__main__":
     parser.add_argument("--eval_samples_filepath",type=str,default="../../Data/Retriever/dev_top_ks.jsonl")
     parser.add_argument("--limit_num_train_samples",type=int)
     parser.add_argument("--limit_num_eval_samples",type=int)
-    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../../Data/Wikipedia")
+    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../../Data/WakatiWithJumanpp")
     parser.add_argument("--model_name",type=str,default="nlp-waseda/roberta-base-japanese")
     parser.add_argument("--results_save_dirname",type=str,default="../../Data/Reader")
     parser.add_argument("--learning_rate",type=float,default=1e-5)
@@ -649,7 +661,7 @@ if __name__=="__main__":
     parser.add_argument("--train_batch_size",type=int,default=12)
     parser.add_argument("--eval_batch_size",type=int,default=16)
     parser.add_argument("--logging_steps",type=int,default=100)
-    parser.add_argument("--context_max_length",type=int,default=3000)
+    parser.add_argument("--context_max_length",type=int,default=1500)
     parser.add_argument("--limit_num_top_k",type=int)
     args=parser.parse_args()
 

@@ -380,12 +380,12 @@ def main(args):
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
-    parser.add_argument("--eval_samples_filepath",type=str,default="../../Data/Retriever/dev_top_ks.jsonl")
+    parser.add_argument("--eval_samples_filepath",type=str,default="../Data/Retriever/dev_top_ks.jsonl")
     parser.add_argument("--limit_num_eval_samples",type=int)
     parser.add_argument("--reader_model_filepath",type=str)
-    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../../Data/Wikipedia")
+    parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
-    parser.add_argument("--results_save_dirname",type=str,default="../../Data/Reader")
+    parser.add_argument("--results_save_dirname",type=str,default="../Data/Reader")
     parser.add_argument("--eval_batch_size",type=int,default=16)
     parser.add_argument("--context_max_length",type=int,default=3000)
     parser.add_argument("--limit_num_top_k",type=int)

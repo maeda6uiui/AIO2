@@ -1,31 +1,14 @@
 import torch
 import torch.nn as nn
-from transformers import BertConfig,BertModel
-
-class PlausibilityCalculator(nn.Module):
-    def __init__(self,dim_feature_vector:int=768):
-        super().__init__()
-
-        self.main=nn.Sequential(
-            nn.Linear(dim_feature_vector,int(dim_feature_vector/2)),
-            nn.Mish(),
-            nn.Linear(int(dim_feature_vector/2),100),
-            nn.Mish(),
-            nn.Linear(100,1),
-            nn.Sigmoid()
-        )
-
-    def forward(self,x):
-        x=self.main(x)
-        return x
+from transformers import AutoConfig,AutoModel
 
 class Reader(nn.Module):
     def __init__(self,bert_model_name:str):
         super().__init__()
 
-        self.bert=BertModel.from_pretrained(bert_model_name)
+        self.bert=AutoModel.from_pretrained(bert_model_name)
 
-        config=BertConfig.from_pretrained(bert_model_name)
+        config=AutoConfig.from_pretrained(bert_model_name)
 
         self.seq_span=nn.Sequential(
             nn.Linear(config.hidden_size*4,config.hidden_size*2),

@@ -26,8 +26,8 @@ class ReaderTrainDataset(Dataset):
     def __init__(self):
         self.questions:List[str]=[]
         self.article_titles:List[str]=[]
-        self.start_indices:List[int]=[]
-        self.end_indices:List[int]=[]
+        self.start_indices:List[List[int]]=[]
+        self.end_indices:List[List[int]]=[]
 
     def __len__(self):
         return len(self.questions)
@@ -35,28 +35,28 @@ class ReaderTrainDataset(Dataset):
     def __getitem__(self,idx:int):
         question=self.questions[idx]
         article_title=self.article_titles[idx]
-        start_index=self.start_indices[idx]
-        end_index=self.end_indices[idx]
+        this_start_indices=self.start_indices[idx]
+        this_end_indices=self.end_indices[idx]
 
-        ret={
-            "question":question,
-            "article_title":article_title,
-            "start_index":start_index,
-            "end_index":end_index
-        }
-        return ret
+        return question,article_title,this_start_indices,this_end_indices
 
     def append(self,question:str,article_title:str,answer_ranges:List[str]):
-        for answer_range in answer_ranges:
-            self.questions.append(question)
-            self.article_titles.append(article_title)
+        self.questions.append(question)
+        self.article_titles.append(article_title)
 
+        this_start_indices:List[int]=[]
+        this_end_indices:List[int]=[]
+
+        for answer_range in answer_ranges:
             start_index,end_index=answer_range.split("-")
             start_index=int(start_index)
             end_index=int(end_index)
 
-            self.start_indices.append(start_index)
-            self.end_indices.append(end_index)
+            this_start_indices.append(start_index)
+            this_end_indices.append(end_index)
+
+        self.start_indices.append(this_start_indices)
+        self.end_indices.append(this_end_indices)
 
 class ReaderEvalDataset(Dataset):
     def __init__(self):
@@ -90,6 +90,17 @@ class ReaderEvalDataset(Dataset):
         self.answers.append(this_answers)
         self.top_k_titles.append(this_top_k_titles)
         self.top_k_scores.append(this_top_k_scores)
+
+def collate_fn_for_train_dataset(batch):
+    question,article_title,this_start_indices,this_end_indices=list(zip(*batch))
+
+    ret={
+        "question":question,
+        "article_title":article_title,
+        "start_indices":this_start_indices,
+        "end_indices":this_end_indices
+    }
+    return ret
 
 def collate_fn_for_eval_dataset(batch):
     qids,questions,src_answers,src_top_k_titles,src_top_k_scores=list(zip(*batch))
@@ -165,9 +176,10 @@ def create_train_model_inputs(
     wikipedia_data_root_dir:Path,
     questions:List[str],
     article_titles:List[str],
-    start_indices:List[int],
-    end_indices:List[int],
-    context_max_length:int):
+    start_indices:List[List[int]],
+    end_indices:List[List[int]],
+    context_max_length:int,
+    max_num_answer_ranges:int):
     contexts:List[str]=[]
     for article_title in article_titles:
         title_hash=get_md5_hash(article_title)
@@ -206,8 +218,17 @@ def create_train_model_inputs(
     attention_mask=attention_mask.to(device)
     token_type_ids=token_type_ids.to(device)
 
-    start_positions=torch.tensor(start_indices,dtype=torch.long,device=device)
-    end_positions=torch.tensor(end_indices,dtype=torch.long,device=device)
+    start_positions=torch.zeros(batch_size,max_num_answer_ranges,dtype=torch.long)
+    end_positions=torch.zeros(batch_size,max_num_answer_ranges,dtype=torch.long)
+
+    for i in range(batch_size):
+        num_given_ranges=len(start_indices[i])
+        for j in range(num_given_ranges):
+            start_positions[i,j]=start_indices[i][j]
+            end_positions[i,j]=end_indices[i][j]
+
+    start_positions=start_positions.to(device)
+    end_positions=end_positions.to(device)
 
     ret={
         "input_ids":input_ids,
@@ -278,7 +299,8 @@ def train(
     max_length:int,
     wikipedia_data_root_dir:Path,
     logging_steps:int,
-    context_max_length:int):
+    context_max_length:int,
+    max_num_answer_ranges:int):
     model.train()
 
     step_count=0
@@ -288,8 +310,8 @@ def train(
     for step,batch in enumerate(train_dataloader):
         questions=batch["question"]
         article_titles=batch["article_title"]
-        start_indices=batch["start_index"]
-        end_indices=batch["end_index"]
+        start_indices=batch["start_indices"]
+        end_indices=batch["end_indices"]
 
         inputs=create_train_model_inputs(
             tokenizer,
@@ -299,7 +321,8 @@ def train(
             article_titles,
             start_indices,
             end_indices,
-            context_max_length
+            context_max_length,
+            max_num_answer_ranges
         )
 
         model.zero_grad()
@@ -494,6 +517,7 @@ def main(args):
     logging_steps:int=args.logging_steps
     context_max_length:int=args.context_max_length
     limit_num_top_k:int=args.limit_num_top_k
+    max_num_answer_ranges:int=args.max_num_answer_ranges
 
     logger.info("モデルの学習を行う準備をしています...")
 
@@ -519,7 +543,7 @@ def main(args):
     optimizer=optim.AdamW(model.parameters(),lr=learning_rate)
 
     train_dataset=create_train_dataset(train_samples_filepath,limit_num_samples=limit_num_train_samples)
-    train_dataloader=DataLoader(train_dataset,batch_size=train_batch_size,shuffle=True)
+    train_dataloader=DataLoader(train_dataset,batch_size=train_batch_size,shuffle=True,collate_fn=collate_fn_for_train_dataset)
 
     logger.info("学習データの数: {}".format(len(train_dataset)))
 
@@ -543,7 +567,8 @@ def main(args):
             config.max_position_embeddings,
             wikipedia_data_root_dir,
             logging_steps,
-            context_max_length
+            context_max_length,
+            max_num_answer_ranges
         )
         logger.info("エポック{}の学習が終了しました".format(epoch))
 
@@ -606,7 +631,7 @@ def main(args):
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
-    parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples_top_100_ar_1_wn.jsonl")
+    parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples_top_100.jsonl")
     parser.add_argument("--eval_samples_filepath",type=str,default="../Data/Retriever/dev_top_ks.jsonl")
     parser.add_argument("--limit_num_train_samples",type=int)
     parser.add_argument("--limit_num_eval_samples",type=int)
@@ -621,6 +646,7 @@ if __name__=="__main__":
     parser.add_argument("--logging_steps",type=int,default=100)
     parser.add_argument("--context_max_length",type=int,default=3000)
     parser.add_argument("--limit_num_top_k",type=int)
+    parser.add_argument("--max_num_answer_ranges",type=int,default=10)
     args=parser.parse_args()
 
     main(args)

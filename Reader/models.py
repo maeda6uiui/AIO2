@@ -71,13 +71,13 @@ class Reader(nn.Module):
             loss_span=0
             positive_count=0
             for i in range(batch_size):
-                if start_positions[i,0]==0 and end_positions[i,0]==0:
-                    continue
-
                 this_start_logits=torch.unsqueeze(start_logits[i],0)    #(1, sequence_length)
                 this_end_logits=torch.unsqueeze(end_logits[i],0)    #(1, sequence_length)
                 
                 for j in range(max_num_answer_ranges):
+                    if start_positions[i,j]==0 and end_positions[i,j]==0:
+                        continue
+
                     start_position=torch.unsqueeze(start_positions[i,j],0)    #(1)
                     end_position=torch.unsqueeze(end_positions[i,j],0)    #(1)
 

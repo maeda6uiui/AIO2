@@ -223,7 +223,7 @@ def create_train_model_inputs(
 
     for i in range(batch_size):
         num_given_ranges=len(start_indices[i])
-        for j in range(num_given_ranges):
+        for j in range(min(num_given_ranges,max_num_answer_ranges)):
             start_positions[i,j]=start_indices[i][j]
             end_positions[i,j]=end_indices[i][j]
 

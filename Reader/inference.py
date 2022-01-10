@@ -161,7 +161,8 @@ def eval(
     wikipedia_data_root_dir:Path,
     eval_batch_size:int,
     context_max_length:int,
-    limit_num_top_k:int):
+    limit_num_top_k:int,
+    mul_retrieval_score:bool):
     model.eval()
 
     question_count=0
@@ -244,6 +245,10 @@ def eval(
         _,start_indices=torch.max(start_logits,dim=1)
         _,end_indices=torch.max(end_logits,dim=1)
 
+        if mul_retrieval_score:
+            top_k_scores=torch.tensor(top_k_scores)
+            plausibility_scores=torch.mul(plausibility_scores,top_k_scores)
+
         _,plausible_article_indices=torch.topk(plausibility_scores,k=num_titles,dim=0)
 
         plausible_article_exists=False
@@ -313,6 +318,7 @@ def main(args):
     eval_batch_size:int=args.eval_batch_size
     context_max_length:int=args.context_max_length
     limit_num_top_k:int=args.limit_num_top_k
+    mul_retrieval_score:bool=args.mul_retrieval_score
 
     logger.info("モデルの評価を行う準備をしています...")
 
@@ -344,7 +350,8 @@ def main(args):
         wikipedia_data_root_dir,
         eval_batch_size,
         context_max_length,
-        limit_num_top_k
+        limit_num_top_k,
+        mul_retrieval_score
     )
 
     eval_accuracy=eval_results["accuracy"]
@@ -389,6 +396,7 @@ if __name__=="__main__":
     parser.add_argument("--eval_batch_size",type=int,default=16)
     parser.add_argument("--context_max_length",type=int,default=3000)
     parser.add_argument("--limit_num_top_k",type=int)
+    parser.add_argument("--mul_retrieval_score",action="store_true")
     args=parser.parse_args()
 
     main(args)

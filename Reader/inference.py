@@ -217,6 +217,10 @@ def eval(
             attention_mask=inputs["attention_mask"][start_index:end_index,:]
             token_type_ids=inputs["token_type_ids"][start_index:end_index,:]
 
+            input_ids=torch.unsqueeze(input_ids,0)
+            attention_mask=torch.unsqueeze(attention_mask,0)
+            token_type_ids=torch.unsqueeze(token_type_ids,0)
+
             sub_inputs={
                 "input_ids":input_ids,
                 "attention_mask":attention_mask,
@@ -230,9 +234,13 @@ def eval(
                 this_end_logits=outputs["end_logits"]
                 this_plausibility_scores=outputs["plausibility_scores"]
 
-                this_start_logits=this_start_logits.cpu()
-                this_end_logits=this_end_logits.cpu()
-                this_plausibility_scores=this_plausibility_scores.cpu()
+                this_start_logits=this_start_logits.cpu()   #(1, eval_batch_size, sequence_length)
+                this_end_logits=this_end_logits.cpu()   #(1, eval_batch_size, sequence_length)
+                this_plausibility_scores=this_plausibility_scores.cpu() #(1, eval_batch_size)
+
+                this_start_logits=torch.squeeze(this_start_logits)  #(eval_batch_size, sequence_length)
+                this_end_logits=torch.squeeze(this_end_logits)  #(eval_batch_size, sequence_length)
+                this_plausibility_scores=torch.squeeze(this_plausibility_scores)    #(eval_batch_size)
 
                 this_start_logits=torch.softmax(this_start_logits,dim=1)
                 this_end_logits=torch.softmax(this_end_logits,dim=1)
@@ -244,6 +252,8 @@ def eval(
 
         _,start_indices=torch.max(start_logits,dim=1)
         _,end_indices=torch.max(end_logits,dim=1)
+
+        plausibility_scores=torch.softmax(plausibility_scores,dim=0)
 
         if mul_retrieval_score:
             top_k_scores=torch.tensor(top_k_scores)

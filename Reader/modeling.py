@@ -3,7 +3,6 @@ import hashlib
 import json
 import logging
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
@@ -98,7 +97,14 @@ class ReaderEvalDataset(Dataset):
 def collate_fn_for_train_dataset(batch):
     question,positive_article_title,this_start_indices,this_end_indices,this_negative_article_titles=list(zip(*batch))
 
-    article_titles=[positive_article_title]+this_negative_article_titles
+    batch_size=len(positive_article_title)
+    article_titles:List[List[str]]=[]
+
+    for i in range(batch_size):
+        this_article_titles=[]
+        this_article_titles.append(positive_article_title[i])
+        this_article_titles+=this_negative_article_titles[i]
+        article_titles.append(this_article_titles)
 
     ret={
         "question":question,
@@ -134,7 +140,7 @@ def collate_fn_for_eval_dataset(batch):
 def get_md5_hash(text:str)->str:
     return hashlib.md5(text.encode()).hexdigest()
 
-def create_train_dataset(samples_filepath:str,limit_num_samples:int=None,limit_num_negative_articles:int=3)->ReaderTrainDataset:
+def create_train_dataset(samples_filepath:str,limit_num_samples:int=None,num_negative_articles:int=3)->ReaderTrainDataset:
     dataset=ReaderTrainDataset()
 
     with open(samples_filepath,"r") as r:
@@ -149,7 +155,7 @@ def create_train_dataset(samples_filepath:str,limit_num_samples:int=None,limit_n
         question=data["question"]
         positive_article_title=data["positive_article_title"]
         this_answer_ranges=data["answer_ranges"]
-        this_negative_article_titles=data["negative_article_titles"][:limit_num_negative_articles]
+        this_negative_article_titles=data["negative_article_titles"][:num_negative_articles]
 
         dataset.append(question,positive_article_title,this_answer_ranges,this_negative_article_titles)
 
@@ -177,14 +183,14 @@ def create_eval_dataset(samples_filepath:str,limit_num_samples:int=None)->Reader
 
     return dataset
 
-def create_train_model_inputs(
+def create_train_model_inputs_single(
     tokenizer:AutoTokenizer,
     max_length:int,
     wikipedia_data_root_dir:Path,
     question:str,
     article_titles:List[str],
-    start_indices:List[List[int]],
-    end_indices:List[List[int]],
+    start_indices:List[int],
+    end_indices:List[int],
     context_max_length:int,
     max_num_answer_ranges:int):
     #0番目の記事が正解を含む正例で、その他の記事は負例
@@ -225,33 +231,76 @@ def create_train_model_inputs(
     input_ids=torch.unsqueeze(input_ids,0)
     attention_mask=torch.unsqueeze(attention_mask,0)
     token_type_ids=torch.unsqueeze(token_type_ids,0)
-    
-    input_ids=input_ids.to(device)
-    attention_mask=attention_mask.to(device)
-    token_type_ids=token_type_ids.to(device)
 
-    start_positions=torch.zeros(num_passages,max_num_answer_ranges,dtype=torch.long)
-    end_positions=torch.zeros(num_passages,max_num_answer_ranges,dtype=torch.long)
+    start_positions=torch.zeros(max_num_answer_ranges,dtype=torch.long)
+    end_positions=torch.zeros(max_num_answer_ranges,dtype=torch.long)
 
-    if start_indices is not None and end_indices is not None:
-        for i in range(num_passages):
-            num_given_ranges=len(start_indices[i])
-            for j in range(min(num_given_ranges,max_num_answer_ranges)):
-                start_positions[i,j]=start_indices[i][j]
-                end_positions[i,j]=end_indices[i][j]
+    num_given_ranges=len(start_indices)
+    for i in range(min(num_given_ranges,max_num_answer_ranges)):
+        start_positions[i]=start_indices[i]
+        end_positions[i]=end_indices[i]
 
     start_positions=torch.unsqueeze(start_positions,0)
     end_positions=torch.unsqueeze(end_positions,0)
-    
-    start_positions=start_positions.to(device)
-    end_positions=end_positions.to(device)
+
+    return input_ids,attention_mask,token_type_ids,start_positions,end_positions
+
+def create_train_model_inputs(
+    tokenizer:AutoTokenizer,
+    max_length:int,
+    wikipedia_data_root_dir:Path,
+    context_max_length:int,
+    max_num_answer_ranges:int,
+    batch):
+    input_ids=None
+    attention_mask=None
+    token_type_ids=None
+    start_positions=None
+    end_positions=None
+
+    questions=batch["question"]
+    article_titles=batch["article_titles"]
+    start_indices=batch["start_indices"]
+    end_indices=batch["end_indices"]
+
+    batch_size=len(questions)
+
+    for i in range(batch_size):
+        question=questions[i]
+        this_article_titles=article_titles[i]
+        this_start_indices=start_indices[i]
+        this_end_indices=end_indices[i]
+
+        this_input_ids,this_attention_mask,this_token_type_ids,this_start_positions,this_end_positions=create_train_model_inputs_single(
+            tokenizer,
+            max_length,
+            wikipedia_data_root_dir,
+            question,
+            this_article_titles,
+            this_start_indices,
+            this_end_indices,
+            context_max_length,
+            max_num_answer_ranges
+        )
+        if input_ids is None:
+            input_ids=this_input_ids
+            attention_mask=this_attention_mask
+            token_type_ids=this_token_type_ids
+            start_positions=this_start_positions
+            end_positions=this_end_positions
+        else:
+            input_ids=torch.cat([input_ids,this_input_ids],dim=0)
+            attention_mask=torch.cat([attention_mask,this_attention_mask],dim=0)
+            token_type_ids=torch.cat([token_type_ids,this_token_type_ids],dim=0)
+            start_positions=torch.cat([start_positions,this_start_positions],dim=0)
+            end_positions=torch.cat([end_positions,this_end_positions],dim=0)
 
     ret={
-        "input_ids":input_ids,
-        "attention_mask":attention_mask,
-        "token_type_ids":token_type_ids,
-        "start_positions":start_positions,
-        "end_positions":end_positions
+        "input_ids":input_ids.to(device),
+        "attention_mask":attention_mask.to(device),
+        "token_type_ids":token_type_ids.to(device),
+        "start_positions":start_positions.to(device),
+        "end_positions":end_positions.to(device)
     }
     return ret
 
@@ -324,21 +373,13 @@ def train(
     total_loss_plausibility=0
 
     for step,batch in enumerate(train_dataloader):
-        questions=batch["question"]
-        article_titles=batch["article_titles"]
-        start_indices=batch["start_indices"]
-        end_indices=batch["end_indices"]
-
         inputs=create_train_model_inputs(
             tokenizer,
             max_length,
             wikipedia_data_root_dir,
-            questions,
-            article_titles,
-            start_indices,
-            end_indices,
             context_max_length,
-            max_num_answer_ranges
+            max_num_answer_ranges,
+            batch
         )
 
         model.zero_grad()
@@ -536,6 +577,7 @@ def main(args):
     train_samples_filepath:str=args.train_samples_filepath
     eval_samples_filepath:str=args.eval_samples_filepath
     limit_num_train_samples:int=args.limit_num_train_samples
+    num_train_negative_articles_per_sample:int=args.num_train_negative_articles_per_sample
     limit_num_eval_samples:int=args.limit_num_eval_samples
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
     bert_model_name:str=args.bert_model_name
@@ -574,7 +616,7 @@ def main(args):
 
     optimizer=optim.AdamW(model.parameters(),lr=learning_rate)
 
-    train_dataset=create_train_dataset(train_samples_filepath,limit_num_samples=limit_num_train_samples)
+    train_dataset=create_train_dataset(train_samples_filepath,limit_num_samples=limit_num_train_samples,num_negative_articles=num_train_negative_articles_per_sample)
     train_dataloader=DataLoader(train_dataset,batch_size=train_batch_size,shuffle=True,collate_fn=collate_fn_for_train_dataset)
 
     logger.info("学習データの数: {}".format(len(train_dataset)))
@@ -664,9 +706,10 @@ def main(args):
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
-    parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples_shuffled.jsonl")
+    parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples.jsonl")
     parser.add_argument("--eval_samples_filepath",type=str,default="../Data/Retriever/dev_top_ks.jsonl")
     parser.add_argument("--limit_num_train_samples",type=int)
+    parser.add_argument("--num_train_negative_articles_per_sample",type=int,default=3)
     parser.add_argument("--limit_num_eval_samples",type=int)
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
@@ -674,7 +717,7 @@ if __name__=="__main__":
     parser.add_argument("--learning_rate",type=float,default=1e-5)
     parser.add_argument("--num_epochs",type=int,default=3)
     parser.add_argument("--resume_epoch",type=int)
-    parser.add_argument("--train_batch_size",type=int,default=12)
+    parser.add_argument("--train_batch_size",type=int,default=4)
     parser.add_argument("--eval_batch_size",type=int,default=16)
     parser.add_argument("--logging_steps",type=int,default=100)
     parser.add_argument("--context_max_length",type=int,default=3000)

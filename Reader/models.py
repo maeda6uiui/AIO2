@@ -96,6 +96,8 @@ class Reader(nn.Module):
                     loss_end=criterion_span(this_end_logits,end_position)
                     loss_span+=loss_start+loss_end
 
+            loss_span/=batch_size
+
             #Plausibility Lossの計算
             plausibility_targets=torch.zeros(batch_size,dtype=torch.long,device=plausibility_scores.device) #(N)
             loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets)

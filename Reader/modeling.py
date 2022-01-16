@@ -643,7 +643,7 @@ def main(args):
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
-    parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples_shuffled.jsonl")
+    parser.add_argument("--train_samples_filepath",type=str)
     parser.add_argument("--eval_samples_filepath",type=str,default="../Data/Retriever/dev_top_ks.jsonl")
     parser.add_argument("--limit_num_train_samples",type=int)
     parser.add_argument("--limit_num_eval_samples",type=int)

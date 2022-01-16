@@ -10,8 +10,18 @@ class Reader(nn.Module):
 
         config=AutoConfig.from_pretrained(model_name)
 
-        self.fc_span=nn.Linear(config.hidden_size,2)
-        self.fc_plausibility=nn.Linear(config.hidden_size,1)
+        self.seq_span=nn.Sequential(
+            nn.Linear(config.hidden_size*4,config.hidden_size),
+            nn.Mish(),
+            nn.Dropout(p=0.1),
+            nn.Linear(config.hidden_size,2)
+        )
+        self.seq_plausibility=nn.Sequential(
+            nn.Linear(config.hidden_size*4,config.hidden_size),
+            nn.Mish(),
+            nn.Dropout(p=0.1),
+            nn.Linear(config.hidden_size,1)
+        )
 
     def forward(
         self,
@@ -32,16 +42,20 @@ class Reader(nn.Module):
         }
         bert_outputs=self.bert(**bert_inputs)
 
-        hidden_states=bert_outputs["hidden_states"][-1] #(N, sequence_length, hidden_size)
+        hidden_states=bert_outputs["hidden_states"][-4:]
 
-        span_logits=self.fc_span(hidden_states) #(N, sequence_length, 2)
+        concat_hidden_states=hidden_states[0]
+        for i in range(1,4):
+            concat_hidden_states=torch.cat([concat_hidden_states,hidden_states[i]],dim=2)
+
+        span_logits=self.seq_span(concat_hidden_states) #(N, sequence_length, 2)
         start_logits,end_logits=torch.split(span_logits,1,dim=2)    #(N, sequence_length, 1)
 
         start_logits=torch.squeeze(start_logits)    #(N, sequence_length)
         end_logits=torch.squeeze(end_logits)    #(N, sequence_length)
 
-        cls_vectors=hidden_states[:,0,:] #(N, hidden_size)
-        plausibility_scores=self.fc_plausibility(cls_vectors)   #(N, 1)
+        cls_vectors=concat_hidden_states[:,0,:] #(N, hidden_size*4)
+        plausibility_scores=self.seq_plausibility(cls_vectors)   #(N, 1)
         plausibility_scores=torch.squeeze(plausibility_scores)  #(N)
 
         loss=None

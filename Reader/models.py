@@ -10,8 +10,7 @@ class Reader(nn.Module):
 
         config=AutoConfig.from_pretrained(model_name)
 
-        self.fc_span_start=nn.Linear(config.hidden_size,1)
-        self.fc_span_end=nn.Linear(config.hidden_size,1)
+        self.fc_span=nn.Linear(config.hidden_size,2)
         self.fc_plausibility=nn.Linear(config.hidden_size,1)
 
     def forward(
@@ -35,8 +34,8 @@ class Reader(nn.Module):
 
         hidden_states=bert_outputs["hidden_states"][-1] #(N, sequence_length, hidden_size)
 
-        start_logits=self.fc_span_start(hidden_states) #(N, sequence_length, 1)
-        end_logits=self.fc_span_end(hidden_states) #(N, sequence_length, 1)
+        span_logits=self.fc_span(hidden_states) #(N, sequence_length, 2)
+        start_logits,end_logits=torch.split(span_logits,1,dim=2)    #(N, sequence_length, 1)
 
         start_logits=torch.squeeze(start_logits)    #(N, sequence_length)
         end_logits=torch.squeeze(end_logits)    #(N, sequence_length)

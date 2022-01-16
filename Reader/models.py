@@ -99,8 +99,10 @@ class Reader(nn.Module):
             loss_span/=batch_size
 
             #Plausibility Lossの計算
-            plausibility_targets=torch.zeros(batch_size,dtype=torch.long,device=plausibility_scores.device) #(N)
-            plausibility_targets[0]=1
+            plausibility_targets=torch.zeros(batch_size,num_passages,dtype=torch.long,device=plausibility_scores.device) #(N, num_passages)
+            for i in range(batch_size):
+                plausibility_targets[i,0]=1
+            
             loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets.float())
 
             loss=loss_span+loss_plausibility

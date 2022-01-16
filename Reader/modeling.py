@@ -234,7 +234,7 @@ def create_train_model_inputs_single(
 
     start_positions=torch.zeros(max_num_answer_ranges,dtype=torch.long)
     end_positions=torch.zeros(max_num_answer_ranges,dtype=torch.long)
-
+    
     num_given_ranges=len(start_indices)
     for i in range(min(num_given_ranges,max_num_answer_ranges)):
         start_positions[i]=start_indices[i]

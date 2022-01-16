@@ -73,7 +73,7 @@ class Reader(nn.Module):
         loss_plausibility=None
         if start_positions is not None and end_positions is not None:
             criterion_span=nn.CrossEntropyLoss()
-            criterion_plausibility=nn.BCEWithLogitsLoss()
+            criterion_plausibility=nn.CrossEntropyLoss()
 
             #Span Lossの計算
             #各バッチは0番目のデータが正例で、他は負例となっている
@@ -99,11 +99,8 @@ class Reader(nn.Module):
             loss_span/=batch_size
 
             #Plausibility Lossの計算
-            plausibility_targets=torch.zeros(batch_size,num_passages,dtype=torch.long,device=plausibility_scores.device) #(N, num_passages)
-            for i in range(batch_size):
-                plausibility_targets[i,0]=1
-            
-            loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets.float())
+            plausibility_targets=torch.zeros(batch_size,dtype=torch.long,device=plausibility_scores.device) #(N)
+            loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets)
 
             loss=loss_span+loss_plausibility
             loss_span=loss_span.item() if loss_span!=0 else 0

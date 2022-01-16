@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
@@ -24,26 +25,24 @@ device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class ReaderTrainDataset(Dataset):
     def __init__(self):
         self.questions:List[str]=[]
-        self.positive_article_titles:List[str]=[]
+        self.article_titles:List[str]=[]
         self.start_indices:List[List[int]]=[]
         self.end_indices:List[List[int]]=[]
-        self.negative_article_titles:List[List[str]]=[]
 
     def __len__(self):
         return len(self.questions)
 
     def __getitem__(self,idx:int):
         question=self.questions[idx]
-        positive_article_title=self.positive_article_titles[idx]
+        article_title=self.article_titles[idx]
         this_start_indices=self.start_indices[idx]
         this_end_indices=self.end_indices[idx]
-        this_negative_article_titles=self.negative_article_titles[idx]
 
-        return question,positive_article_title,this_start_indices,this_end_indices,this_negative_article_titles
+        return question,article_title,this_start_indices,this_end_indices
 
-    def append(self,question:str,positive_article_title:str,answer_ranges:List[str],this_negative_article_titles:List[str]):
+    def append(self,question:str,article_title:str,answer_ranges:List[str]):
         self.questions.append(question)
-        self.positive_article_titles.append(positive_article_title)
+        self.article_titles.append(article_title)
 
         this_start_indices:List[int]=[]
         this_end_indices:List[int]=[]
@@ -58,8 +57,6 @@ class ReaderTrainDataset(Dataset):
 
         self.start_indices.append(this_start_indices)
         self.end_indices.append(this_end_indices)
-
-        self.negative_article_titles.append(this_negative_article_titles)
 
 class ReaderEvalDataset(Dataset):
     def __init__(self):
@@ -95,20 +92,11 @@ class ReaderEvalDataset(Dataset):
         self.top_k_scores.append(this_top_k_scores)
 
 def collate_fn_for_train_dataset(batch):
-    question,positive_article_title,this_start_indices,this_end_indices,this_negative_article_titles=list(zip(*batch))
-
-    batch_size=len(positive_article_title)
-    article_titles:List[List[str]]=[]
-
-    for i in range(batch_size):
-        this_article_titles=[]
-        this_article_titles.append(positive_article_title[i])
-        this_article_titles+=this_negative_article_titles[i]
-        article_titles.append(this_article_titles)
+    question,article_title,this_start_indices,this_end_indices=list(zip(*batch))
 
     ret={
         "question":question,
-        "article_titles":article_titles,
+        "article_title":article_title,
         "start_indices":this_start_indices,
         "end_indices":this_end_indices
     }
@@ -140,7 +128,7 @@ def collate_fn_for_eval_dataset(batch):
 def get_md5_hash(text:str)->str:
     return hashlib.md5(text.encode()).hexdigest()
 
-def create_train_dataset(samples_filepath:str,limit_num_samples:int=None,num_negative_articles:int=3)->ReaderTrainDataset:
+def create_train_dataset(samples_filepath:str,limit_num_samples:int=None)->ReaderTrainDataset:
     dataset=ReaderTrainDataset()
 
     with open(samples_filepath,"r") as r:
@@ -153,11 +141,10 @@ def create_train_dataset(samples_filepath:str,limit_num_samples:int=None,num_neg
         data=json.loads(line)
 
         question=data["question"]
-        positive_article_title=data["positive_article_title"]
+        article_title=data["article_title"]
         this_answer_ranges=data["answer_ranges"]
-        this_negative_article_titles=data["negative_article_titles"][:num_negative_articles]
 
-        dataset.append(question,positive_article_title,this_answer_ranges,this_negative_article_titles)
+        dataset.append(question,article_title,this_answer_ranges)
 
     return dataset
 
@@ -183,17 +170,16 @@ def create_eval_dataset(samples_filepath:str,limit_num_samples:int=None)->Reader
 
     return dataset
 
-def create_train_model_inputs_single(
+def create_train_model_inputs(
     tokenizer:AutoTokenizer,
     max_length:int,
     wikipedia_data_root_dir:Path,
-    question:str,
+    questions:List[str],
     article_titles:List[str],
-    start_indices:List[int],
-    end_indices:List[int],
+    start_indices:List[List[int]],
+    end_indices:List[List[int]],
     context_max_length:int,
     max_num_answer_ranges:int):
-    #0番目の記事が正解を含む正例で、その他の記事は負例
     contexts:List[str]=[]
     for article_title in article_titles:
         title_hash=get_md5_hash(article_title)
@@ -204,15 +190,15 @@ def create_train_model_inputs_single(
             context=context[:context_max_length]
             contexts.append(context)
 
-    num_passages=len(article_titles)
+    batch_size=len(questions)
 
-    input_ids=torch.empty(num_passages,max_length,dtype=torch.long)
-    attention_mask=torch.empty(num_passages,max_length,dtype=torch.long)
-    token_type_ids=torch.empty(num_passages,max_length,dtype=torch.long)
+    input_ids=torch.empty(batch_size,max_length,dtype=torch.long)
+    attention_mask=torch.empty(batch_size,max_length,dtype=torch.long)
+    token_type_ids=torch.empty(batch_size,max_length,dtype=torch.long)
 
-    for i in range(num_passages):
+    for i in range(batch_size):
         encode=tokenizer.encode_plus(
-            question,
+            questions[i],
             contexts[i],
             padding="max_length",
             max_length=max_length,
@@ -228,79 +214,28 @@ def create_train_model_inputs_single(
         attention_mask[i]=this_attention_mask
         token_type_ids[i]=this_token_type_ids
 
-    input_ids=torch.unsqueeze(input_ids,0)
-    attention_mask=torch.unsqueeze(attention_mask,0)
-    token_type_ids=torch.unsqueeze(token_type_ids,0)
+    input_ids=input_ids.to(device)
+    attention_mask=attention_mask.to(device)
+    token_type_ids=token_type_ids.to(device)
 
-    start_positions=torch.zeros(max_num_answer_ranges,dtype=torch.long)
-    end_positions=torch.zeros(max_num_answer_ranges,dtype=torch.long)
-    
-    num_given_ranges=len(start_indices)
-    for i in range(min(num_given_ranges,max_num_answer_ranges)):
-        start_positions[i]=start_indices[i]
-        end_positions[i]=end_indices[i]
-
-    start_positions=torch.unsqueeze(start_positions,0)
-    end_positions=torch.unsqueeze(end_positions,0)
-
-    return input_ids,attention_mask,token_type_ids,start_positions,end_positions
-
-def create_train_model_inputs(
-    tokenizer:AutoTokenizer,
-    max_length:int,
-    wikipedia_data_root_dir:Path,
-    context_max_length:int,
-    max_num_answer_ranges:int,
-    batch):
-    input_ids=None
-    attention_mask=None
-    token_type_ids=None
-    start_positions=None
-    end_positions=None
-
-    questions=batch["question"]
-    article_titles=batch["article_titles"]
-    start_indices=batch["start_indices"]
-    end_indices=batch["end_indices"]
-
-    batch_size=len(questions)
+    start_positions=torch.zeros(batch_size,max_num_answer_ranges,dtype=torch.long)
+    end_positions=torch.zeros(batch_size,max_num_answer_ranges,dtype=torch.long)
 
     for i in range(batch_size):
-        question=questions[i]
-        this_article_titles=article_titles[i]
-        this_start_indices=start_indices[i]
-        this_end_indices=end_indices[i]
+        num_given_ranges=len(start_indices[i])
+        for j in range(min(num_given_ranges,max_num_answer_ranges)):
+            start_positions[i,j]=start_indices[i][j]
+            end_positions[i,j]=end_indices[i][j]
 
-        this_input_ids,this_attention_mask,this_token_type_ids,this_start_positions,this_end_positions=create_train_model_inputs_single(
-            tokenizer,
-            max_length,
-            wikipedia_data_root_dir,
-            question,
-            this_article_titles,
-            this_start_indices,
-            this_end_indices,
-            context_max_length,
-            max_num_answer_ranges
-        )
-        if input_ids is None:
-            input_ids=this_input_ids
-            attention_mask=this_attention_mask
-            token_type_ids=this_token_type_ids
-            start_positions=this_start_positions
-            end_positions=this_end_positions
-        else:
-            input_ids=torch.cat([input_ids,this_input_ids],dim=0)
-            attention_mask=torch.cat([attention_mask,this_attention_mask],dim=0)
-            token_type_ids=torch.cat([token_type_ids,this_token_type_ids],dim=0)
-            start_positions=torch.cat([start_positions,this_start_positions],dim=0)
-            end_positions=torch.cat([end_positions,this_end_positions],dim=0)
+    start_positions=start_positions.to(device)
+    end_positions=end_positions.to(device)
 
     ret={
-        "input_ids":input_ids.to(device),
-        "attention_mask":attention_mask.to(device),
-        "token_type_ids":token_type_ids.to(device),
-        "start_positions":start_positions.to(device),
-        "end_positions":end_positions.to(device)
+        "input_ids":input_ids,
+        "attention_mask":attention_mask,
+        "token_type_ids":token_type_ids,
+        "start_positions":start_positions,
+        "end_positions":end_positions
     }
     return ret
 
@@ -373,13 +308,21 @@ def train(
     total_loss_plausibility=0
 
     for step,batch in enumerate(train_dataloader):
+        questions=batch["question"]
+        article_titles=batch["article_title"]
+        start_indices=batch["start_indices"]
+        end_indices=batch["end_indices"]
+
         inputs=create_train_model_inputs(
             tokenizer,
             max_length,
             wikipedia_data_root_dir,
+            questions,
+            article_titles,
+            start_indices,
+            end_indices,
             context_max_length,
-            max_num_answer_ranges,
-            batch
+            max_num_answer_ranges
         )
 
         model.zero_grad()
@@ -577,7 +520,6 @@ def main(args):
     train_samples_filepath:str=args.train_samples_filepath
     eval_samples_filepath:str=args.eval_samples_filepath
     limit_num_train_samples:int=args.limit_num_train_samples
-    num_train_negative_articles_per_sample:int=args.num_train_negative_articles_per_sample
     limit_num_eval_samples:int=args.limit_num_eval_samples
     wikipedia_data_root_dirname:str=args.wikipedia_data_root_dirname
     bert_model_name:str=args.bert_model_name
@@ -616,7 +558,7 @@ def main(args):
 
     optimizer=optim.AdamW(model.parameters(),lr=learning_rate)
 
-    train_dataset=create_train_dataset(train_samples_filepath,limit_num_samples=limit_num_train_samples,num_negative_articles=num_train_negative_articles_per_sample)
+    train_dataset=create_train_dataset(train_samples_filepath,limit_num_samples=limit_num_train_samples)
     train_dataloader=DataLoader(train_dataset,batch_size=train_batch_size,shuffle=True,collate_fn=collate_fn_for_train_dataset)
 
     logger.info("学習データの数: {}".format(len(train_dataset)))
@@ -706,10 +648,9 @@ def main(args):
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
-    parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples.jsonl")
+    parser.add_argument("--train_samples_filepath",type=str,default="../Data/Reader/train_samples_shuffled.jsonl")
     parser.add_argument("--eval_samples_filepath",type=str,default="../Data/Retriever/dev_top_ks.jsonl")
     parser.add_argument("--limit_num_train_samples",type=int)
-    parser.add_argument("--num_train_negative_articles_per_sample",type=int,default=3)
     parser.add_argument("--limit_num_eval_samples",type=int)
     parser.add_argument("--wikipedia_data_root_dirname",type=str,default="../Data/Wikipedia")
     parser.add_argument("--bert_model_name",type=str,default="cl-tohoku/bert-base-japanese-whole-word-masking")
@@ -717,7 +658,7 @@ if __name__=="__main__":
     parser.add_argument("--learning_rate",type=float,default=1e-5)
     parser.add_argument("--num_epochs",type=int,default=3)
     parser.add_argument("--resume_epoch",type=int)
-    parser.add_argument("--train_batch_size",type=int,default=4)
+    parser.add_argument("--train_batch_size",type=int,default=12)
     parser.add_argument("--eval_batch_size",type=int,default=16)
     parser.add_argument("--logging_steps",type=int,default=100)
     parser.add_argument("--context_max_length",type=int,default=3000)

@@ -414,10 +414,6 @@ def eval(
             attention_mask=inputs["attention_mask"][start_index:end_index,:]
             token_type_ids=inputs["token_type_ids"][start_index:end_index,:]
 
-            input_ids=torch.unsqueeze(input_ids,0)
-            attention_mask=torch.unsqueeze(attention_mask,0)
-            token_type_ids=torch.unsqueeze(token_type_ids,0)
-
             sub_inputs={
                 "input_ids":input_ids,
                 "attention_mask":attention_mask,

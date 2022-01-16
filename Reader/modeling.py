@@ -3,7 +3,6 @@ import hashlib
 import json
 import logging
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset,DataLoader
 from pathlib import Path
@@ -658,7 +657,7 @@ if __name__=="__main__":
     parser.add_argument("--learning_rate",type=float,default=1e-5)
     parser.add_argument("--num_epochs",type=int,default=3)
     parser.add_argument("--resume_epoch",type=int)
-    parser.add_argument("--train_batch_size",type=int,default=12)
+    parser.add_argument("--train_batch_size",type=int,default=16)
     parser.add_argument("--eval_batch_size",type=int,default=16)
     parser.add_argument("--logging_steps",type=int,default=100)
     parser.add_argument("--context_max_length",type=int,default=3000)

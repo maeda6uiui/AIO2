@@ -11,13 +11,17 @@ class Reader(nn.Module):
         config=AutoConfig.from_pretrained(model_name)
 
         self.seq_span=nn.Sequential(
-            nn.Linear(config.hidden_size*4,config.hidden_size),
+            nn.Linear(config.hidden_size*4,config.hidden_size*2),
+            nn.Mish(),
+            nn.Linear(config.hidden_size*2,config.hidden_size),
             nn.Mish(),
             nn.Dropout(p=0.1),
             nn.Linear(config.hidden_size,2)
         )
         self.seq_plausibility=nn.Sequential(
-            nn.Linear(config.hidden_size*4,config.hidden_size),
+            nn.Linear(config.hidden_size*4,config.hidden_size*2),
+            nn.Mish(),
+            nn.Linear(config.hidden_size*2,config.hidden_size),
             nn.Mish(),
             nn.Dropout(p=0.1),
             nn.Linear(config.hidden_size,1)

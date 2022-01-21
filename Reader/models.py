@@ -93,6 +93,7 @@ class Reader(nn.Module):
             #Plausibility Lossの計算
             plausibility_targets=(start_positions[:,0]!=0).float().to(plausibility_scores.device)   #(N)
             loss_plausibility=criterion_plausibility(plausibility_scores,plausibility_targets)
+            loss_plausibility*=10
 
             loss=loss_span+loss_plausibility
             loss_span=loss_span.item() if loss_span!=0 else 0

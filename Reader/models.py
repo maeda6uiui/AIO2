@@ -36,6 +36,7 @@ class Reader(nn.Module):
         end_positions:torch.LongTensor=None #(N, max_num_answer_ranges)
     ):
         batch_size=input_ids.size(0)
+        sequence_length=input_ids.size(1)
 
         bert_inputs={
             "input_ids":input_ids,
@@ -55,12 +56,12 @@ class Reader(nn.Module):
         span_logits=self.seq_span(concat_hidden_states) #(N, sequence_length, 2)
         start_logits,end_logits=torch.split(span_logits,1,dim=2)    #(N, sequence_length, 1)
 
-        start_logits=torch.squeeze(start_logits)    #(N, sequence_length)
-        end_logits=torch.squeeze(end_logits)    #(N, sequence_length)
+        start_logits=start_logits.view(batch_size,sequence_length)    #(N, sequence_length)
+        end_logits=end_logits.view(batch_size,sequence_length)    #(N, sequence_length)
 
         cls_vectors=concat_hidden_states[:,0,:] #(N, hidden_size*4)
         plausibility_scores=self.seq_plausibility(cls_vectors)   #(N, 1)
-        plausibility_scores=torch.squeeze(plausibility_scores)  #(N)
+        plausibility_scores=plausibility_scores.view(-1)  #(N)
 
         loss=None
         loss_span=None

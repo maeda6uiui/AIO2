@@ -278,7 +278,7 @@ def get_most_plausible_article_index(
 
             this_plausibility_scores=outputs["plausibility_scores"]
             this_plausibility_scores=this_plausibility_scores.cpu() #(1, eval_batch_size)
-            this_plausibility_scores=torch.squeeze(this_plausibility_scores)    #(eval_batch_size)
+            this_plausibility_scores=this_plausibility_scores.view(this_plausibility_scores.size(-1))    #(eval_batch_size)
             plausibility_scores=torch.cat([plausibility_scores,this_plausibility_scores],dim=0)
 
     plausible_article_index=torch.argmax(plausibility_scores,dim=0).item()
@@ -310,7 +310,7 @@ def get_most_plausible_chunk(
 
     unk_id=tokenizer.convert_tokens_to_ids("[UNK]")
 
-    for i in range(num_chunks):
+    for i in range(num_sub_batches):
         start_index=eval_batch_size*i
         end_index=eval_batch_size*(i+1)
 
@@ -335,9 +335,9 @@ def get_most_plausible_chunk(
             this_end_logits=this_end_logits.cpu()   #(1, eval_batch_size, sequence_length)
             this_plausibility_scores=this_plausibility_scores.cpu() #(1, eval_batch_size)
 
-            this_start_logits=torch.squeeze(this_start_logits)  #(eval_batch_size, sequence_length)
-            this_end_logits=torch.squeeze(this_end_logits)  #(eval_batch_size, sequence_length)
-            this_plausibility_scores=torch.squeeze(this_plausibility_scores)    #(eval_batch_size)
+            this_start_logits=this_start_logits.view(this_start_logits.size(-2),this_start_logits.size(-1))  #(eval_batch_size, sequence_length)
+            this_end_logits=this_end_logits.view(this_end_logits.size(-2),this_end_logits.size(-1))  #(eval_batch_size, sequence_length)
+            this_plausibility_scores=this_plausibility_scores.view(this_plausibility_scores.size(-1))    #(eval_batch_size)
 
             this_start_logits=torch.softmax(this_start_logits,dim=1)
             this_end_logits=torch.softmax(this_end_logits,dim=1)
